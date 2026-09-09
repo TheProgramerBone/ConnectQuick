@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.ConnectQuickController" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+    <style name="Theme.ConnectQuickController.Scan" parent="Theme.ConnectQuickController">
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>

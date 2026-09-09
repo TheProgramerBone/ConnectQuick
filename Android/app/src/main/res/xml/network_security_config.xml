@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Allows plaintext ws:// to any host. Android 9+ blocks cleartext traffic by default, but the
+  Backend itself defaults to plaintext ws:// with an explicit "local development only" warning
+  (Backend/src/server.ts, Backend/README.md "Production notes") whenever CERT_PATH/KEY_PATH aren't
+  set — this mirrors that same stance on the client, not a stricter or looser one. A real
+  deployment terminates TLS (wss://) in front of the backend; this override doesn't stop the app
+  from using wss:// too, it only additionally permits ws:// for local/LAN testing.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
