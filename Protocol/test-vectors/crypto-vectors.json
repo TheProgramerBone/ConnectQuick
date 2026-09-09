@@ -1,0 +1,57 @@
+{
+  "$comment": "Fixed inputs/outputs for the primitives in Protocol/protocol-spec.md §3/§5/pairing-decision-signing. Any of /Backend, /WindowsHost, /Android must reproduce these bit-for-bit. Keys are given as raw Ed25519/X25519 JWK 'd' (private) and 'x' (public) octets, base64url, no padding — the same wire format the protocol uses everywhere. See README.md in this directory.",
+  "identities": {
+    "host": {
+      "privateJwkD": "CNrjEgaeqdbDBXjkSd5JrNHbV23FjJZnkVNn3UyBz9k",
+      "publicKeyB64Url": "kBAZn_KVcnxy4WMGZKQL4KCAP9yeAEXIzglby_n3Sx4",
+      "expectedDeviceId": "wqG2DH8bIj2Xm0at2cC4UQ"
+    },
+    "controller": {
+      "privateJwkD": "T7BupCrGr_8ycVc1alOpF4waiwBVtepf4tQx-GTs85k",
+      "publicKeyB64Url": "sJ3APcSySvKVriofFZjZDhVYmRfaEVUPnPW4L-m8pTU",
+      "expectedDeviceId": "vVRqWT1ZgtJxtAw_zFHhxo"
+    },
+    "pairingEphemeral": {
+      "algorithm": "X25519",
+      "privateJwkD": "GPAnknWnilMfMn2LK0nIxDD_wM1gAIAZQTfbb5ZztEI",
+      "publicKeyB64Url": "fXdI6KEOzOk0PajKRUDYWzJYM9GNJN-mGTbFEt23fmI"
+    }
+  },
+  "deriveDeviceId": {
+    "$comment": "deriveDeviceId(identityPub) = base64url(SHA-256('connectquick:device:' || identityPub))[0:22]",
+    "cases": [
+      { "identityPub": "kBAZn_KVcnxy4WMGZKQL4KCAP9yeAEXIzglby_n3Sx4", "expected": "wqG2DH8bIj2Xm0at2cC4UQ" },
+      { "identityPub": "sJ3APcSySvKVriofFZjZDhVYmRfaEVUPnPW4L-m8pTU", "expected": "vVRqWT1ZgtJxtAw_zFHhxo" }
+    ]
+  },
+  "challengeSignature": {
+    "$comment": "hello.challengeSig = Ed25519(identityPriv, raw bytes of base64url-decoded serverChallenge)",
+    "serverChallengeB64Url": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "hostSignatureB64Url": "DnnmFz-sd0tAjEizHXrRQuJcYlvqYfvrdfFKf-maXAYpB02TGh6sO7bP5YUPuJVzILLXroC2pdMoIXTwmxzUCA",
+    "controllerSignatureB64Url": "ghKVPnxzRbw7O-h6pkQhZTB6J-Z8g6jPBCTaicHL6g3C_G2nwUTZ7HW22lTjNrcKYeccrn_52whwKU1-sVfEBg"
+  },
+  "sas": {
+    "$comment": "computeSas(hostPub, deviceEphemeralPub, nonce): 6-digit code shown on the Host's authorize dialog",
+    "hostPub": "kBAZn_KVcnxy4WMGZKQL4KCAP9yeAEXIzglby_n3Sx4",
+    "deviceEphemeralPub": "fXdI6KEOzOk0PajKRUDYWzJYM9GNJN-mGTbFEt23fmI",
+    "nonceB64Url": "MzMzMzMzMzMzMzMzMzMzMw",
+    "expectedSasCode": "436137"
+  },
+  "pairingDecisionSignature": {
+    "$comment": "hostSignature = Ed25519(hostIdentityPriv, `${pairingId}|${deviceId}|${approved?1:0}|${permissions.join(',')}`) — see protocol-spec.md 'Firma de la decisión de pairing'.",
+    "pairingId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+    "deviceId": "vVRqWT1ZgtJxtAw_zFHhxo",
+    "approve": {
+      "approved": true,
+      "permissions": ["remote_desktop", "mouse", "keyboard", "clipboard", "files", "media", "apps", "power"],
+      "signedMessage": "d290f1ee-6c54-4b01-90e6-d701748f0851|vVRqWT1ZgtJxtAw_zFHhxo|1|remote_desktop,mouse,keyboard,clipboard,files,media,apps,power",
+      "signatureB64Url": "-AKKmDn8kNX6X93igVXbWLWNn_m5iFoNUAuqbjJZj2b3Rqh-MFcPl5g5T8t8I90hOL8kQPFLPs0JJkdinenDAw"
+    },
+    "reject": {
+      "approved": false,
+      "permissions": [],
+      "signedMessage": "d290f1ee-6c54-4b01-90e6-d701748f0851|vVRqWT1ZgtJxtAw_zFHhxo|0|",
+      "signatureB64Url": "hEp8ZlT-9dS3SGmu_HwqWMZHi1KetPpwhxOIKKXR1kWzo3kySgB3SUZz1nAEVYa4s5dlEUHlUnRMstMfDFq9DQ"
+    }
+  }
+}

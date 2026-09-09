@@ -1,0 +1,33 @@
+# IDE
+.idea/
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Backend (Node/TypeScript)
+Backend/node_modules/
+Backend/dist/
+Backend/data/
+Backend/.scratch/
+Backend/coverage/
+
+# WindowsHost (.NET) — scaffolding lands in a later phase
+WindowsHost/bin/
+WindowsHost/obj/
+WindowsHost/**/bin/
+WindowsHost/**/obj/
+
+# Android (Gradle) — scaffolding lands in a later phase
+Android/.gradle/
+Android/build/
+Android/**/build/
+Android/local.properties
+Android/.cxx/
+
+# TLS material — never commit real certs/keys
+*.pem
+*.pfx
+*.p12
+!Docs/**/*.pem.example

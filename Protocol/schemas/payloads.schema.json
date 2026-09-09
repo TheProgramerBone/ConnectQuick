@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://connectquick.dev/schemas/payloads.schema.json",
+  "title": "ConnectQuick Payloads",
+  "$comment": "Un $def por cada 'type' del envelope. El validador busca payloads.schema.json#/$defs/<type con puntos reemplazados por _> antes de aceptar cualquier mensaje.",
+  "$defs": {
+    "hello_challenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serverChallenge", "protocolVersion"],
+      "properties": {
+        "serverChallenge": { "type": "string", "contentEncoding": "base64url" },
+        "protocolVersion": { "type": "integer" }
+      }
+    },
+    "hello": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "deviceId", "identityPub", "challengeSig", "clientVersion"],
+      "properties": {
+        "role": { "type": "string", "enum": ["host", "controller"] },
+        "deviceId": { "type": "string", "minLength": 16, "maxLength": 64 },
+        "identityPub": { "type": "string", "contentEncoding": "base64url", "minLength": 43, "maxLength": 44 },
+        "challengeSig": { "type": "string", "contentEncoding": "base64url" },
+        "clientVersion": { "type": "string", "maxLength": 32 },
+        "hostName": { "type": "string", "maxLength": 64 }
+      }
+    },
+    "hello_ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted", "serverChallenge"],
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "serverChallenge": { "type": "string", "contentEncoding": "base64url" },
+        "protocolVersion": { "type": "integer" },
+        "capabilities": { "type": "array", "items": { "type": "string" } },
+        "reason": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "heartbeat_ping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq"],
+      "properties": { "seq": { "type": "integer", "minimum": 0 } }
+    },
+    "heartbeat_pong": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq"],
+      "properties": { "seq": { "type": "integer", "minimum": 0 } }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "maxLength": 64 },
+        "message": { "type": "string", "maxLength": 300 },
+        "refId": { "type": "string" }
+      }
+    },
+    "pairing_create": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostName", "hostEphPub"],
+      "properties": {
+        "hostName": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "hostEphPub": { "type": "string", "contentEncoding": "base64url" }
+      }
+    },
+    "pairing_created": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pairingId", "nonce", "expiresAt", "ttlSeconds"],
+      "properties": {
+        "pairingId": { "type": "string", "format": "uuid" },
+        "nonce": { "type": "string", "contentEncoding": "base64url" },
+        "expiresAt": { "type": "integer" },
+        "ttlSeconds": { "type": "integer", "const": 60 }
+      }
+    },
+    "pairing_init": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pairingId", "deviceId", "deviceName", "identityPub", "ephemeralPub"],
+      "properties": {
+        "pairingId": { "type": "string", "format": "uuid" },
+        "deviceId": { "type": "string", "minLength": 16, "maxLength": 64 },
+        "deviceName": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "identityPub": { "type": "string", "contentEncoding": "base64url" },
+        "ephemeralPub": { "type": "string", "contentEncoding": "base64url" }
+      }
+    },
+    "pairing_incoming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pairingId", "deviceId", "deviceName", "identityPub", "ephemeralPub", "sasCode"],
+      "properties": {
+        "pairingId": { "type": "string", "format": "uuid" },
+        "deviceId": { "type": "string" },
+        "deviceName": { "type": "string", "maxLength": 64 },
+        "identityPub": { "type": "string", "contentEncoding": "base64url" },
+        "ephemeralPub": { "type": "string", "contentEncoding": "base64url" },
+        "sasCode": { "type": "string", "pattern": "^[0-9]{6}$" }
+      }
+    },
+    "pairing_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pairingId", "approved", "hostSignature"],
+      "properties": {
+        "pairingId": { "type": "string", "format": "uuid" },
+        "approved": { "type": "boolean" },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["remote_desktop", "mouse", "keyboard", "clipboard", "files", "media", "apps", "power"]
+          }
+        },
+        "hostSignature": { "type": "string", "contentEncoding": "base64url" }
+      }
+    },
+    "pairing_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pairingId", "success"],
+      "properties": {
+        "pairingId": { "type": "string", "format": "uuid" },
+        "success": { "type": "boolean" },
+        "reason": { "type": "string", "maxLength": 200 },
+        "hostId": { "type": "string" },
+        "hostName": { "type": "string" },
+        "hostPub": { "type": "string", "contentEncoding": "base64url" },
+        "hostSignature": { "type": "string", "contentEncoding": "base64url" },
+        "permissions": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "pairing_revoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId"],
+      "properties": { "deviceId": { "type": "string" } }
+    },
+    "pairing_revoked": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deviceId", "reason"],
+      "properties": {
+        "deviceId": { "type": "string" },
+        "reason": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "presence_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostId", "online"],
+      "properties": {
+        "hostId": { "type": "string" },
+        "online": { "type": "boolean" },
+        "lastSeenAt": { "type": "integer" }
+      }
+    },
+    "session_connect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostId"],
+      "properties": {
+        "hostId": { "type": "string" },
+        "deviceId": { "type": "string", "$comment": "Set by the backend when relaying Ctrl->BE to BE->Host; absent on the original Ctrl->BE request." },
+        "deviceName": { "type": "string", "maxLength": 64 }
+      }
+    },
+    "session_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["CONNECTING", "AUTHENTICATING", "CONNECTED", "RECONNECTING", "DISCONNECTED", "REJECTED"]
+        },
+        "reason": { "type": "string", "maxLength": 200 },
+        "rttMs": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://connectquick.dev/schemas/envelope.schema.json",
+  "title": "ConnectQuick Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "ts", "type", "payload"],
+  "properties": {
+    "v": { "type": "integer", "const": 1 },
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "ts": { "type": "integer", "minimum": 0 },
+    "type": {
+      "type": "string",
+      "enum": [
+        "hello.challenge",
+        "hello",
+        "hello.ack",
+        "heartbeat.ping",
+        "heartbeat.pong",
+        "error",
+        "pairing.create",
+        "pairing.created",
+        "pairing.init",
+        "pairing.incoming",
+        "pairing.decision",
+        "pairing.result",
+        "pairing.revoke",
+        "pairing.revoked",
+        "presence.update",
+        "session.connect",
+        "session.state"
+      ]
+    },
+    "payload": { "type": "object" }
+  }
+}
