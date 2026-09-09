@@ -13,11 +13,13 @@ Backend/data/
 Backend/.scratch/
 Backend/coverage/
 
-# WindowsHost (.NET) — scaffolding lands in a later phase
+# WindowsHost (.NET)
 WindowsHost/bin/
 WindowsHost/obj/
 WindowsHost/**/bin/
 WindowsHost/**/obj/
+*.csproj.user
+.vs/
 
 # Android (Gradle) — scaffolding lands in a later phase
 Android/.gradle/
