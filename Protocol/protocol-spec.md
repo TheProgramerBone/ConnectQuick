@@ -57,7 +57,7 @@ La clave privada nunca sale del dispositivo:
 
 El backend solo almacena **claves públicas**, nunca privadas.
 
-## 4. Catálogo de mensajes — Fase 1-3 (implementados esta sesión)
+## 4. Catálogo de mensajes del envelope (señalización y relay)
 
 ### Sesión de control (Host/Controller ↔ Backend)
 
@@ -93,12 +93,17 @@ un Host concreto, que solo se concede a través del flujo de pairing (tabla `aut
 | `pairing.revoke`                | Host → BE  | Revoca un dispositivo ya autorizado.                                     |
 | `pairing.revoked`               | BE → Ctrl  | Notifica al dispositivo revocado (si está conectado) y cierra su sesión. |
 
-### Gestión de sesión / presencia
+### Presencia, sesión E2E e ICE (ver §7 y §9)
 
 | `type`               | Emisor     | Descripción                                                        |
 |-----------------------|------------|------------------------------------------------------------------------|
 | `presence.update`     | BE → Ctrl  | Cambia el estado online/offline de un Host vinculado.               |
 | `session.connect`     | Ctrl → BE, BE → Host | Controller pide iniciar una sesión con un Host ya vinculado; el backend reenvía el mismo `type` al Host, añadiendo `deviceId`/`deviceName` del Controller (no presentes en el mensaje original Ctrl→BE) para que el Host sepa quién pide entrar. |
+| `session.accept`      | Host → BE, BE → Ctrl | El Host acepta con su clave efímera, los permisos efectivos y una firma que cubre ambas claves (§7.2). |
+| `session.reject`      | Host → BE, BE → Ctrl | El Host rechaza con un motivo (`not_paired`, `user_denied`, …). |
+| `session.data`        | ambos, vía BE | Frame cifrado opaco `{sessionId, seq, ct}`; el backend solo lo enruta (§7.4). |
+| `session.end`         | ambos, BE → ambos | Termina la sesión con un motivo; ambos extremos sueltan todo lo retenido. |
+| `ice.request` / `ice.config` | cualquiera ↔ BE | Servidores STUN y credenciales TURN efímeras para WebRTC (§9). |
 | `session.state`       | Host → BE, BE → Ctrl | El Host reporta cambios de estado de la sesión que el backend relaya a cada Controller enlazado a esa sesión (ver §6 máquina de estados). El backend también emite `session.state` a un Controller directamente cuando el Host solicitado está offline o cuando el Host se desconecta durante una sesión activa. |
 
 ### Firma de la decisión de pairing
@@ -153,22 +158,187 @@ CONNECTING → AUTHENTICATING → CONNECTED → RECONNECTING → CONNECTED
 - `DISCONNECTED`: cierre limpio o backoff agotado.
 - `REJECTED`: autenticación o autorización rechazada (dispositivo revocado, firma inválida).
 
-## 7. Reservado para fases futuras (no implementado esta sesión)
+## 7. Capa de sesión extremo a extremo (E2E)
 
-Ya reservado en el espacio de nombres de `type` para no romper compatibilidad hacia atrás:
-`desktop.frame`, `input.mouse_move`, `input.mouse_click`, `input.key`, `input.hotkey`,
-`clipboard.push`, `clipboard.pull`, `files.list`, `files.upload_chunk`, `files.download_chunk`,
-`media.control`, `power.action`, `apps.launch`. Diseño detallado en
-[`/Docs/ROADMAP.md`](../Docs/ROADMAP.md).
+Desde esta versión el backend **no ve el contenido** de ninguna sesión de control: solo enruta
+frames opacos `session.data`. Todo lo que mueve ratón, teclado, portapapeles, archivos, energía o
+señalización de vídeo viaja cifrado entre Controller y Host.
 
-## 8. Capabilities
+### 7.1 Modelo de confianza
 
-Al autenticar, el backend informa al Controller de las capacidades del Host conectado:
+| Quién | Puede | No puede |
+|---|---|---|
+| Backend / relay | Saber *quién* habla con *quién*, cuándo, cuántos bytes. Cortar o retrasar. | Leer, modificar sin que se detecte, ni inyectar mensajes; suplantar al Host o al Controller. |
+| Endpoint comprometido (PC o teléfono) | Todo lo que sus permisos permiten. | Superar los permisos que el *otro* extremo concedió; reutilizar una sesión pasada. |
 
-```json
-{ "protocolVersion": 1, "hostVersion": "0.1.0", "capabilities": ["pairing", "presence"] }
+El Controller **no confía** en la respuesta del backend: verifica con la clave de identidad del Host
+que guardó al vincular (§3, §5). El Host **no confía** en que el backend diga "este dispositivo está
+autorizado": comprueba su propio registro local de dispositivos aprobados en ese PC.
+
+### 7.2 Handshake (1 RTT, claves efímeras por sesión)
+
+1. **Controller → BE → Host `session.connect`**: `{hostId, sessionId (UUID), ephPub (X25519, 32 B), issuedAt (ms), sig}`.
+   `sig` = Ed25519 (clave de identidad del Controller) sobre los bytes UTF-8 de
+   `connectquick:session.connect:v1|{sessionId}|{hostId}|{deviceId}|{ephPub}|{issuedAt}`.
+   El backend verifica la firma, la ventana temporal (±60 s), que `sessionId` no se haya usado, y que el
+   dispositivo esté autorizado para ese Host; añade `deviceId`, `deviceName` e `identityPub` antes de
+   reenviar. **El Host repite todas esas comprobaciones por su cuenta**: `deviceId` = hash de
+   `identityPub`, firma válida, `issuedAt` fresco, `sessionId` no repetido, dispositivo aprobado
+   *en este PC*, y que el PC acepte conexiones.
+2. **Host → BE → Controller `session.accept`**: `{sessionId, ephPub (X25519), permissions, sig}`.
+   `permissions` = lo que el usuario concedió al vincular **∩** lo que el PC tiene habilitado ahora
+   (nunca más). `sig` = Ed25519 (identidad del Host) sobre
+   `connectquick:session.accept:v1|{sessionId}|{hostId}|{deviceId}|{ctrlEphPub}|{hostEphPub}|{permissions separados por coma}`.
+   Cubre **ambas** claves efímeras y los permisos: un relay que cambie una clave, añada un permiso o
+   suplante al Host no puede producir esa firma. El Controller la verifica contra la clave del Host
+   guardada en el pairing, y rechaza una lista de permisos que no sea subconjunto de la vinculada.
+3. **Rechazo**: `session.reject {sessionId, reason}` (p. ej. `not_paired`, `bad_signature`,
+   `stale_request`, `replayed_session`, `host_not_accepting`, `user_denied`).
+
+### 7.3 Derivación de claves
+
+```
+shared     = X25519(efímera propia, efímera del par)      # se rechaza el secreto todo-ceros
+transcript = SHA-256("connectquick:session.transcript:v1|" + sessionId|hostId|deviceId|
+                     ctrlEphPub|hostEphPub|permissions)
+prk        = HKDF-Extract(salt = transcript, IKM = shared)       # SHA-256
+key(C→H)   = HKDF-Expand(prk, "connectquick:session:v1:c2h", 32)
+key(H→C)   = HKDF-Expand(prk, "connectquick:session:v1:h2c", 32)
 ```
 
-Fases futuras añadirán `"desktop_stream"`, `"mouse"`, `"keyboard"`, `"clipboard"`, `"files"`,
-`"media"`, `"power"`, `"apps"` a esta lista — la UI de Android debe ocultar cualquier función cuya
-capability no esté presente (nunca mostrar un botón para algo que el Host no soporta todavía).
+Dos claves distintas, una por dirección. Las claves privadas efímeras se destruyen al terminar la
+sesión: comprometer una identidad de largo plazo **no** descifra sesiones pasadas (forward secrecy).
+
+### 7.4 Frames `session.data`
+
+`{sessionId, seq, ct}` con `ct = base64url(AES-256-GCM(clave de la dirección, nonce, plaintext, aad) ‖ tag 16 B)`.
+
+- `nonce` (96 bit) = `00 00 00 00 ‖ uint64_be(seq)`. Una clave por dirección + `seq` único ⇒ nonce jamás repetido.
+- `aad` = UTF-8 `cq1|{sessionId}|{c2h|h2c}|{seq}`: ata el frame a su sesión, dirección y número.
+- `seq` empieza en 0, **estrictamente creciente** por dirección (un frame repetido, antiguo o
+  reordenado se descarta), máximo 2³²−1; al agotarse hay que abrir sesión nueva.
+- El plaintext es un JSON UTF-8 de **≤ 40 000 bytes**. `ct` ≤ 64 KiB en total por envelope.
+- Un frame que no autentica **no mueve** el contador del receptor y cuenta como infracción; 25
+  infracciones en una sesión la terminan (`protocol_violations`).
+
+### 7.5 Confirmación de claves y ciclo de vida
+
+La sesión solo se considera establecida cuando el Controller descifra el **primer frame del Host**
+(`ctl.caps`, que declara permisos efectivos y funciones disponibles). Si no llega o no autentica,
+se aborta (`key_confirmation_failed`). Después, `ctl.ping`/`ctl.pong` cada ~10 s detectan un par
+mudo aunque el socket siga abierto (`host_unresponsive`).
+
+`session.end {sessionId, reason}` o la pérdida del socket de señalización **terminan** la sesión.
+Al terminar, el Host suelta toda tecla/botón retenido, cancela transferencias y detiene el vídeo
+(§9). Razones habituales: `user_disconnect`, `revoked`, `signaling_lost`, `idle_timeout`,
+`host_shutdown`, `protocol_violations`, `replaced`, `peer_gone`, `peer_too_slow`.
+
+### 7.6 Límites aplicados por el backend (sin leer el contenido)
+
+Por sesión: 400 frames/s y 8 MiB/s (configurables), cola máxima por receptor 4 MiB (`peer_too_slow`),
+200 infracciones consecutivas ⇒ `rate_limit_abuse`. Una sesión sin tráfico 60 s se cierra
+(`idle`), una sin aceptar 30 s también, y ninguna dura más de 12 h. Un dispositivo ⇒ una sesión;
+un Host ⇒ una sesión (la misma persona reconectando sustituye a la anterior; otra persona recibe
+`host_busy`). Un cliente duplicado con la misma identidad recibe el cierre WebSocket `4010`.
+
+## 8. Mensajes internos (dentro de `session.data`)
+
+El backend **no puede validarlos**; cada extremo valida *todo* mensaje entrante contra
+[`schemas/session-messages.schema.json`](schemas/session-messages.schema.json) antes de actuar, y un
+mensaje inválido se descarta (y cuenta como infracción). Dirección: C = Controller (Android),
+H = Host (Windows). "Permiso" = permiso de pairing requerido; el Host además lo cruza con sus
+ajustes locales y responde `ctl.error` `forbidden` / `disabled_by_host`.
+
+| `t` | Dir. | Permiso | Campos (`?` = opcional) |
+|---|---|---|---|
+| `ctl.ping` | ↔ | — | `n` |
+| `ctl.pong` | ↔ | — | `n` |
+| `ctl.caps` | H→C | — | `hostVersion`, `permissions`, `features`, `screen`?, `maxFileBytes`?, `clipboardSync`? |
+| `ctl.error` | H→C | — | `id`?, `code`, `message` |
+| `input.mouse_move` | C→H | mouse | `dx`, `dy` |
+| `input.mouse_abs` | C→H | mouse | `x`, `y` |
+| `input.mouse_button` | C→H | mouse | `button`, `down` |
+| `input.mouse_wheel` | C→H | mouse | `dx`, `dy` |
+| `input.key` | C→H | keyboard | `code`, `down` |
+| `input.text` | C→H | keyboard | `text` |
+| `input.release_all` | C→H | mouse o keyboard | — |
+| `stream.start` | C→H | remote_desktop | `id`, `maxWidth`, `maxHeight`, `maxFps`, `maxBitrateKbps` |
+| `stream.stop` | C→H | remote_desktop | `id`? |
+| `stream.state` | H→C | — | `id`?, `state`, `width`?, `height`?, `fps`?, `bitrateKbps`?, `reason`? |
+| `stream.stats` | H→C | — | `width`?, `height`?, `fps`, `bitrateKbps`, `rttMs`? |
+| `rtc.offer` | H→C | — | `sdp` |
+| `rtc.answer` | C→H | remote_desktop | `sdp` |
+| `rtc.candidate` | ↔ | remote_desktop | `candidate`, `sdpMid`?, `sdpMLineIndex`? |
+| `rtc.end` | ↔ | remote_desktop | `reason`? |
+| `clipboard.push` | ↔ | clipboard | `id`, `text`, `sha256` |
+| `clipboard.ack` | H→C | — | `id`, `ok`, `reason`? |
+| `clipboard.request` | C→H | clipboard | `id` |
+| `media.control` | C→H | media | `id`, `action`, `steps`? |
+| `media.result` | H→C | — | `id`, `ok`, `confirmed`, `reason`? |
+| `file.offer` | ↔ | files | `transferId`, `name`, `size`, `sha256`, `chunkSize` |
+| `file.accept` | ↔ | files | `transferId`, `offset` |
+| `file.reject` | ↔ | files | `transferId`, `reason` |
+| `file.chunk` | ↔ | files | `transferId`, `offset`, `data` |
+| `file.ack` | ↔ | files | `transferId`, `received` |
+| `file.done` | ↔ | files | `transferId` |
+| `file.result` | ↔ | — | `transferId`, `ok`, `reason`?, `savedAs`? |
+| `file.cancel` | ↔ | files | `transferId`, `reason`? |
+| `file.list` | C→H | files | `id` |
+| `file.listing` | H→C | — | `id`, `files` |
+| `file.request` | C→H | files | `id`, `transferId`, `name` |
+| `power.request` | C→H | power | `id`, `action` |
+| `power.challenge` | H→C | — | `id`, `action`, `token`, `expiresInMs`, `delaySeconds` |
+| `power.confirm` | C→H | power | `id`, `token` |
+| `power.result` | H→C | — | `id`, `ok`, `action`, `reason`?, `delaySeconds`? |
+
+Notas de comportamiento (verificadas por tests de integración, ver `Docs/GUIA_DE_PRUEBAS.md`):
+
+- **Entrada**: movimiento relativo en píxeles tras sensibilidad; absoluto normalizado 0..65535 sobre
+  el monitor principal; rueda en unidades de 1/120; teclas por *scancode* físico (`code`, no
+  carácter); `input.text` teclea Unicode tal cual (sin caracteres de control). Todo lo retenido se
+  suelta con `input.release_all` y automáticamente al terminar la sesión.
+- **Portapapeles**: solo texto UTF-8 ≤ 16 KiB con `sha256` verificado por el receptor; el eco de lo
+  que acabas de recibir no se reenvía; los datos marcados por Windows como "excluir del
+  historial/monitorización" (gestores de contraseñas) no se envían de forma automática.
+- **Archivos**: ofertas con `sha256`; el receptor decide (tope, espacio, duplicado, destino) y
+  responde el `offset` para reanudar; chunks estrictamente secuenciales ≤ 24 KiB con ventana de
+  ack; si llegan más bytes de los anunciados, fuera de orden o el hash final no coincide, se
+  descarta todo. Nunca viaja una ruta: solo nombre (saneado por el receptor), tamaño y bytes. Las
+  peticiones del teléfono se resuelven contra el listado de la carpeta "para compartir" del PC.
+- **Energía**: `lock` y `cancel` actúan al instante; `sleep`/`restart`/`shutdown` devuelven un
+  `power.challenge` con token de un solo uso y caducidad corta, y solo se ejecutan cuando el
+  teléfono lo devuelve en `power.confirm` tras una confirmación explícita del usuario. No existe
+  mensaje alguno para ejecutar comandos arbitrarios.
+- **Multimedia**: `media.result.confirmed` es siempre `false` en Windows (no hay confirmación del
+  reproductor): la UI dice "enviado", nunca "reproduciendo".
+
+## 9. Vídeo de escritorio (WebRTC)
+
+El relay **nunca transporta vídeo**. La señalización (oferta/respuesta SDP y candidatos ICE) viaja
+dentro del canal cifrado de §7 (`rtc.*`); el medio fluye por UDP directo (DTLS-SRTP, VP8) entre el
+PC y el teléfono, o a través de un servidor TURN si la red lo exige.
+
+1. C → H `stream.start {id, maxWidth, maxHeight, maxFps, maxBitrateKbps}`. El Host recorta la petición
+   a sus propios límites y responde `stream.state {state: starting|streaming|error|stopped, …}`.
+2. H → C `rtc.offer`; C → H `rtc.answer`; ambos `rtc.candidate` (el Host envía como máximo 40; el Controller retiene como máximo 60 hasta tener la oferta); H → C
+   `stream.stats` cada ~2 s (fps, kbps, RTT) — el Host adapta (AIMD) resolución, fps y bitrate a la
+   pérdida/RTT dentro de los límites pedidos.
+3. Si Windows no permite leer el escritorio (UAC, pantalla de bloqueo, Ctrl+Alt+Supr) el Host
+   informa `stream.state {state: streaming, reason: secure_desktop}` en vez de enviar negro; ConnectQuick
+   **no** intenta saltarse UAC ni el escritorio seguro.
+4. Cada extremo pide `ice.request` al backend (envelope, no E2E) y recibe `ice.config`: STUN configurados y, si el operador
+   definió TURN, credenciales **efímeras por dispositivo** (REST de coturn: usuario = expiración:deviceId,
+   contraseña = HMAC-SHA1 con secreto compartido, TTL configurable). Sin TURN, redes con NAT simétrico
+   o CGNAT pueden no conectar: la app lo dice (`ice_failed_no_relay`) en lugar de quedarse colgada.
+5. `stream.stop`/`rtc.end`, el fin de la sesión o el cierre de la pantalla de vídeo detienen captura
+   y codificación y liberan el `PeerConnection` en ambos extremos.
+
+## 10. Capacidades y funciones no implementadas
+
+`ctl.caps` (primer frame cifrado del Host) declara `permissions` efectivos y `features` realmente
+presentes. La app **solo** habilita una función si hay sesión verificada **y** el permiso está
+concedido; si no, explica por qué (sin conexión / sin permiso / desactivado en el PC).
+
+`apps` (lanzar aplicaciones) está reservado en el contrato de pairing por compatibilidad, **no tiene
+implementación** y nunca se concede ni se muestra. Reservado sin implementar: `input.hotkey` (los
+atajos se componen con `input.key`), audio del escritorio, múltiples monitores.

@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test --experimental-test-coverage \"test/**/*.test.ts\"",
     "test:unit": "node --test \"test/unit/**/*.test.ts\"",
-    "test:integration": "node --test \"test/integration/**/*.test.ts\""
+    "test:integration": "node --test \"test/integration/**/*.test.ts\"",
+    "loadtest": "node scripts/loadtest.ts"
   },
   "dependencies": {
     "ajv": "^8.17.1",

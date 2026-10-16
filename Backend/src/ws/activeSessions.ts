@@ -1,42 +1,97 @@
+import { TokenBucketRateLimiter } from "../rateLimiter.ts";
+
+export type SessionPhase = "PENDING" | "ACTIVE";
+
+export interface ActiveSession {
+  sessionId: string;
+  phase: SessionPhase;
+  controllerConnId: string;
+  hostConnId: string;
+  controllerDeviceId: string;
+  hostId: string;
+  /** Controller's ephemeral X25519 public key, kept to verify the Host's signed accept. */
+  controllerEphPub: string;
+  createdAt: number;
+  acceptedAt: number | null;
+  lastDataAt: number;
+  /** Consecutive rate-limit violations; the session is cut when this gets out of hand. */
+  violations: number;
+}
+
 /**
- * Tracks which controller connections are linked to which host connection for the lifetime of
- * a `session.connect` negotiation. This is pure signaling relay — the backend never sees the
- * desktop stream or input events it enables (those are future phases and, per Docs/SECURITY.md,
- * are designed to ride end-to-end encrypted on top of this same link once implemented).
+ * Tracks every control session the relay is currently routing. A session is a pure signaling/
+ * routing record — the backend never holds a session key and never sees plaintext (see
+ * Docs/SECURITY.md, "end-to-end session encryption").
+ *
+ * Invariants (enforced by create/remove):
+ *  - at most one session per Controller connection,
+ *  - at most one session per Host connection (two phones driving one mouse is never intended).
  */
 export class ActiveSessionStore {
-  private readonly controllerToHost = new Map<string, string>();
-  private readonly hostToControllers = new Map<string, Set<string>>();
+  private readonly byId = new Map<string, ActiveSession>();
+  private readonly byController = new Map<string, string>();
+  private readonly byHost = new Map<string, string>();
+  readonly frameLimiter: TokenBucketRateLimiter;
+  readonly byteLimiter: TokenBucketRateLimiter;
 
-  link(controllerConnId: string, hostConnId: string): void {
-    this.controllerToHost.set(controllerConnId, hostConnId);
-    let set = this.hostToControllers.get(hostConnId);
-    if (!set) {
-      set = new Set();
-      this.hostToControllers.set(hostConnId, set);
+  constructor(framesPerSecond = 400, bytesPerSecond = 8 * 1024 * 1024) {
+    this.frameLimiter = new TokenBucketRateLimiter(framesPerSecond * 2, framesPerSecond);
+    this.byteLimiter = new TokenBucketRateLimiter(bytesPerSecond * 2, bytesPerSecond);
+  }
+
+  create(s: Omit<ActiveSession, "phase" | "acceptedAt" | "lastDataAt" | "violations">): ActiveSession {
+    if (this.byId.has(s.sessionId)) throw new Error("duplicate sessionId");
+    if (this.byController.has(s.controllerConnId) || this.byHost.has(s.hostConnId)) {
+      throw new Error("connection already has a session; end it first");
     }
-    set.add(controllerConnId);
+    const session: ActiveSession = {
+      ...s,
+      phase: "PENDING",
+      acceptedAt: null,
+      lastDataAt: s.createdAt,
+      violations: 0,
+    };
+    this.byId.set(s.sessionId, session);
+    this.byController.set(s.controllerConnId, s.sessionId);
+    this.byHost.set(s.hostConnId, s.sessionId);
+    return session;
   }
 
-  hostFor(controllerConnId: string): string | undefined {
-    return this.controllerToHost.get(controllerConnId);
+  get(sessionId: string): ActiveSession | undefined {
+    return this.byId.get(sessionId);
   }
 
-  controllersFor(hostConnId: string): Set<string> {
-    return this.hostToControllers.get(hostConnId) ?? new Set();
+  forController(controllerConnId: string): ActiveSession | undefined {
+    const id = this.byController.get(controllerConnId);
+    return id ? this.byId.get(id) : undefined;
   }
 
-  unlinkController(controllerConnId: string): void {
-    const hostConnId = this.controllerToHost.get(controllerConnId);
-    this.controllerToHost.delete(controllerConnId);
-    if (hostConnId) this.hostToControllers.get(hostConnId)?.delete(controllerConnId);
+  forHost(hostConnId: string): ActiveSession | undefined {
+    const id = this.byHost.get(hostConnId);
+    return id ? this.byId.get(id) : undefined;
   }
 
-  unlinkHost(hostConnId: string): void {
-    const controllers = this.hostToControllers.get(hostConnId);
-    if (controllers) {
-      for (const c of controllers) this.controllerToHost.delete(c);
-    }
-    this.hostToControllers.delete(hostConnId);
+  /** Every session (any phase) of one device against one host — used by revocation. */
+  forDevice(controllerDeviceId: string, hostId: string): ActiveSession[] {
+    return this.all().filter((s) => s.controllerDeviceId === controllerDeviceId && s.hostId === hostId);
+  }
+
+  all(): ActiveSession[] {
+    return [...this.byId.values()];
+  }
+
+  size(): number {
+    return this.byId.size;
+  }
+
+  remove(sessionId: string): ActiveSession | undefined {
+    const s = this.byId.get(sessionId);
+    if (!s) return undefined;
+    this.byId.delete(sessionId);
+    if (this.byController.get(s.controllerConnId) === sessionId) this.byController.delete(s.controllerConnId);
+    if (this.byHost.get(s.hostConnId) === sessionId) this.byHost.delete(s.hostConnId);
+    this.frameLimiter.delete(sessionId);
+    this.byteLimiter.delete(sessionId);
+    return s;
   }
 }

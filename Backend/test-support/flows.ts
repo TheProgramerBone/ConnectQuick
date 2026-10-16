@@ -1,4 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { TestClient, generateIdentity, generateEphemeral, signBytes, type TestIdentity } from "./testClient.ts";
+import { sessionAcceptMessage, sessionConnectMessage } from "../src/ws/handlers/util.ts";
+import {
+  SessionChannel,
+  deriveSessionKeys,
+  generateEphemeral as generateSessionEphemeral,
+  sharedSecret,
+  transcriptHash,
+} from "./sessionCrypto.ts";
 
 /** Performs the hello.challenge / hello / hello.ack transport handshake for one client. */
 export async function authenticate(
@@ -6,7 +15,7 @@ export async function authenticate(
   role: "host" | "controller",
   identity: TestIdentity,
   opts: { hostName?: string; clientVersion?: string } = {},
-): Promise<void> {
+): Promise<Record<string, unknown>> {
   await client.ready();
   const challenge = await client.waitFor("hello.challenge");
   const serverChallenge = challenge.payload["serverChallenge"] as string;
@@ -23,6 +32,7 @@ export async function authenticate(
   if (ack.payload["accepted"] !== true) {
     throw new Error(`hello rejected: ${JSON.stringify(ack.payload)}`);
   }
+  return ack.payload;
 }
 
 export interface PairedFixture {
@@ -90,5 +100,76 @@ export async function pairHostAndController(
     controllerIdentity,
     pairingId,
     permissions,
+  };
+}
+
+export interface OpenedSession {
+  sessionId: string;
+  /** The Controller's end of the encrypted channel. */
+  controller: SessionChannel;
+  /** The Host's end of the encrypted channel. */
+  host: SessionChannel;
+  permissions: string[];
+}
+
+/**
+ * Builds a valid, signed session.connect payload for `identity` toward `hostId`. Exposed
+ * separately so security tests can corrupt individual fields.
+ */
+export function buildSessionConnect(
+  identity: TestIdentity,
+  hostId: string,
+  overrides: { sessionId?: string; issuedAt?: number } = {},
+): { payload: Record<string, unknown>; sessionId: string; ephemeral: ReturnType<typeof generateSessionEphemeral> } {
+  const sessionId = overrides.sessionId ?? randomUUID();
+  const issuedAt = overrides.issuedAt ?? Date.now();
+  const ephemeral = generateSessionEphemeral();
+  const sig = signBytes(
+    identity.privateKey,
+    sessionConnectMessage(sessionId, hostId, identity.deviceId, ephemeral.publicB64Url, issuedAt),
+  );
+  return { payload: { hostId, sessionId, ephPub: ephemeral.publicB64Url, issuedAt, sig }, sessionId, ephemeral };
+}
+
+/** Performs the whole Controller->Host session handshake and returns both encrypted channels. */
+export async function openSession(fixture: PairedFixture, grant?: string[]): Promise<OpenedSession> {
+  const { payload, sessionId, ephemeral: controllerEph } = buildSessionConnect(
+    fixture.controllerIdentity,
+    fixture.hostId,
+  );
+  fixture.controllerClient.send("session.connect", payload);
+  const incoming = await fixture.hostClient.waitFor("session.connect");
+
+  const permissions = grant ?? fixture.permissions;
+  const hostEph = generateSessionEphemeral();
+  const sig = signBytes(
+    fixture.hostIdentity.privateKey,
+    sessionAcceptMessage(
+      sessionId,
+      fixture.hostId,
+      fixture.controllerIdentity.deviceId,
+      incoming.payload["ephPub"] as string,
+      hostEph.publicB64Url,
+      permissions,
+    ),
+  );
+  fixture.hostClient.send("session.accept", { sessionId, ephPub: hostEph.publicB64Url, permissions, sig });
+  const accepted = await fixture.controllerClient.waitFor("session.accept");
+
+  const transcript = transcriptHash(
+    sessionId,
+    fixture.hostId,
+    fixture.controllerIdentity.deviceId,
+    controllerEph.publicB64Url,
+    accepted.payload["ephPub"] as string,
+    accepted.payload["permissions"] as string[],
+  );
+  const keysController = deriveSessionKeys(sharedSecret(controllerEph, accepted.payload["ephPub"] as string), transcript);
+  const keysHost = deriveSessionKeys(sharedSecret(hostEph, incoming.payload["ephPub"] as string), transcript);
+  return {
+    sessionId,
+    permissions,
+    controller: SessionChannel.forController(sessionId, keysController),
+    host: SessionChannel.forHost(sessionId, keysHost),
   };
 }

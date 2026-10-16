@@ -46,11 +46,23 @@ export function handleHello(ctx: AppContext, conn: Connection, envelope: Envelop
       ctx.hosts.rename(p.deviceId, p.hostName.trim());
     }
     ctx.hosts.touchLastSeen(p.deviceId);
+    // A reconnect can arrive before the old socket's timeout fires (Wi-Fi <-> mobile data). The
+    // newest authenticated connection wins; the stale one is closed so it can never act again.
+    const previous = ctx.connections.getHost(p.deviceId);
+    if (previous && previous !== conn) {
+      previous.replaced = true;
+      previous.socket.close(4010, "replaced by a newer connection");
+    }
     ctx.connections.addHost(p.deviceId, conn);
   } else {
     // Controllers don't need a separate identity registry: their deviceId already is the
     // cryptographic commitment to identityPub. Whether they may control a given host is
     // decided per-action against authorized_devices (set only through §7 pairing).
+    const previous = ctx.connections.getController(p.deviceId);
+    if (previous && previous !== conn) {
+      previous.replaced = true;
+      previous.socket.close(4010, "replaced by a newer connection");
+    }
     ctx.connections.addController(p.deviceId, conn);
   }
 
@@ -65,7 +77,14 @@ export function handleHello(ctx: AppContext, conn: Connection, envelope: Envelop
     accepted: true,
     serverChallenge: conn.serverChallenge,
     protocolVersion: ctx.config.protocolVersion,
-    capabilities: ["pairing", "presence"],
+    capabilities: [
+      "pairing",
+      "presence",
+      "session.e2e.v1",
+      "ice",
+      ...(ctx.config.ice.stunUrls.length > 0 ? ["stun"] : []),
+      ...(ctx.config.ice.turnUrls.length > 0 && ctx.config.ice.turnSecret ? ["turn"] : []),
+    ],
   });
 
   ctx.log.info("device authenticated", { role: p.role, deviceId: p.deviceId });

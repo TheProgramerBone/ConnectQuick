@@ -32,4 +32,20 @@ export class PendingPairingStore {
       if (p.deviceId === deviceId) this.byId.delete(id);
     }
   }
+
+  /** Drops entries the Host never answered; without this an unattended Host leaks one entry per attempt. */
+  sweep(olderThanMs: number, now = Date.now()): number {
+    let dropped = 0;
+    for (const [id, p] of this.byId) {
+      if (now - p.createdAt > olderThanMs) {
+        this.byId.delete(id);
+        dropped++;
+      }
+    }
+    return dropped;
+  }
+
+  size(): number {
+    return this.byId.size;
+  }
 }

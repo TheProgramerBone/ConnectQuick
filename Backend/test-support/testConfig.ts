@@ -1,27 +1,27 @@
-import type { Config } from "../src/config.ts";
+import { loadConfig, type Config } from "../src/config.ts";
 
-const DEFAULT_RATE_LIMIT = {
-  pairingCreatePerMinutePerHost: 10,
-  pairingInitPerMinutePerIp: 5,
-  messagesPerSecondPerConnection: 30,
-};
-
-export type ConfigOverrides = Omit<Partial<Config>, "rateLimit"> & {
+export type ConfigOverrides = Omit<Partial<Config>, "rateLimit" | "session" | "ice" | "limits"> & {
   rateLimit?: Partial<Config["rateLimit"]>;
+  session?: Partial<Config["session"]>;
+  ice?: Partial<Config["ice"]>;
+  limits?: Partial<Config["limits"]>;
 };
 
-/** A full Config for tests — deliberately not derived from env, so tests are hermetic. */
+/**
+ * A full Config for tests. It starts from loadConfig({}) with an EMPTY environment, so tests are
+ * hermetic (never influenced by the developer's shell) yet always track the real defaults.
+ */
 export function testConfig(overrides: ConfigOverrides = {}): Config {
-  const { rateLimit: rateLimitOverrides, ...rest } = overrides;
+  const base = loadConfig({});
+  const { rateLimit, session, ice, limits, ...rest } = overrides;
   return {
+    ...base,
     port: 0, // ephemeral — OS picks a free port
     dbPath: ":memory:",
-    protocolVersion: 1,
-    pairingTtlSeconds: 60,
-    heartbeatIntervalMs: 15_000,
-    heartbeatTimeoutMs: 40_000,
-    maxMessageBytes: 64 * 1024,
-    rateLimit: { ...DEFAULT_RATE_LIMIT, ...rateLimitOverrides },
     ...rest,
+    rateLimit: { ...base.rateLimit, ...rateLimit },
+    session: { ...base.session, ...session },
+    ice: { ...base.ice, ...ice },
+    limits: { ...base.limits, ...limits },
   };
 }

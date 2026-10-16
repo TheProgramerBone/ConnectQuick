@@ -4,14 +4,26 @@
   "title": "ConnectQuick Envelope",
   "type": "object",
   "additionalProperties": false,
-  "required": ["v", "id", "ts", "type", "payload"],
+  "required": [
+    "v",
+    "id",
+    "ts",
+    "type",
+    "payload"
+  ],
   "properties": {
-    "v": { "type": "integer", "const": 1 },
+    "v": {
+      "type": "integer",
+      "const": 1
+    },
     "id": {
       "type": "string",
       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
     },
-    "ts": { "type": "integer", "minimum": 0 },
+    "ts": {
+      "type": "integer",
+      "minimum": 0
+    },
     "type": {
       "type": "string",
       "enum": [
@@ -31,9 +43,17 @@
         "pairing.revoked",
         "presence.update",
         "session.connect",
-        "session.state"
+        "session.state",
+        "session.accept",
+        "session.reject",
+        "session.data",
+        "session.end",
+        "ice.request",
+        "ice.config"
       ]
     },
-    "payload": { "type": "object" }
+    "payload": {
+      "type": "object"
+    }
   }
 }

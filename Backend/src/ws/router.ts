@@ -10,7 +10,15 @@ import {
   handlePairingDecision,
   handlePairingRevoke,
 } from "./handlers/pairing.ts";
-import { handleSessionConnect, handleSessionState } from "./handlers/session.ts";
+import {
+  handleSessionAccept,
+  handleSessionConnect,
+  handleSessionData,
+  handleSessionEnd,
+  handleSessionReject,
+  handleSessionState,
+} from "./handlers/session.ts";
+import { handleIceRequest } from "./handlers/ice.ts";
 
 type Handler = (ctx: AppContext, conn: Connection, envelope: Envelope) => void;
 
@@ -29,6 +37,11 @@ const CLIENT_ORIGINATED_HANDLERS: Record<string, Handler> = {
   "pairing.revoke": handlePairingRevoke,
   "session.connect": handleSessionConnect,
   "session.state": handleSessionState,
+  "session.accept": handleSessionAccept,
+  "session.reject": handleSessionReject,
+  "session.data": handleSessionData,
+  "session.end": handleSessionEnd,
+  "ice.request": handleIceRequest,
 };
 
 export function route(ctx: AppContext, conn: Connection, envelope: Envelope): void {

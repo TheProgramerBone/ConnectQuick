@@ -1,0 +1,1138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://connectquick.dev/schemas/session-messages.schema.json",
+  "title": "ConnectQuick session (inner, end-to-end encrypted) messages",
+  "$comment": "These messages travel inside session.data frames, AEAD-encrypted between Controller and Host. The backend cannot validate them: the Controller and the Host MUST validate every inbound message against these schemas before acting. One $def per 't', dots replaced by underscores. Each inner JSON document is at most 40000 bytes.",
+  "$defs": {
+    "ctl_ping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "n"
+      ],
+      "properties": {
+        "t": {
+          "const": "ctl.ping"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ctl_pong": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "n"
+      ],
+      "properties": {
+        "t": {
+          "const": "ctl.pong"
+        },
+        "n": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ctl_caps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "hostVersion",
+        "permissions",
+        "features"
+      ],
+      "properties": {
+        "t": {
+          "const": "ctl.caps"
+        },
+        "hostVersion": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 32
+        },
+        "permissions": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "remote_desktop",
+              "mouse",
+              "keyboard",
+              "clipboard",
+              "files",
+              "media",
+              "apps",
+              "power"
+            ]
+          }
+        },
+        "features": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 32
+          }
+        },
+        "screen": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "width",
+            "height"
+          ],
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32768
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32768
+            }
+          }
+        },
+        "maxFileBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "clipboardSync": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ctl_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "t": {
+          "const": "ctl.error"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "message": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 200
+        }
+      }
+    },
+    "input_mouse_move": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "dx",
+        "dy"
+      ],
+      "properties": {
+        "t": {
+          "const": "input.mouse_move"
+        },
+        "dx": {
+          "type": "integer",
+          "minimum": -4096,
+          "maximum": 4096
+        },
+        "dy": {
+          "type": "integer",
+          "minimum": -4096,
+          "maximum": 4096
+        }
+      },
+      "$comment": "Relative pointer motion in device-independent pixels of the Host primary monitor, after the Controller applied sensitivity."
+    },
+    "input_mouse_abs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "x",
+        "y"
+      ],
+      "properties": {
+        "t": {
+          "const": "input.mouse_abs"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      },
+      "$comment": "Absolute position normalised to the Host primary monitor: 0..65535 maps to left..right / top..bottom (SendInput MOUSEEVENTF_ABSOLUTE convention)."
+    },
+    "input_mouse_button": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "button",
+        "down"
+      ],
+      "properties": {
+        "t": {
+          "const": "input.mouse_button"
+        },
+        "button": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right",
+            "middle",
+            "x1",
+            "x2"
+          ]
+        },
+        "down": {
+          "type": "boolean"
+        }
+      }
+    },
+    "input_mouse_wheel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "dx",
+        "dy"
+      ],
+      "properties": {
+        "t": {
+          "const": "input.mouse_wheel"
+        },
+        "dx": {
+          "type": "integer",
+          "minimum": -1200,
+          "maximum": 1200
+        },
+        "dy": {
+          "type": "integer",
+          "minimum": -1200,
+          "maximum": 1200
+        }
+      },
+      "$comment": "Units of 1/120 notch (WHEEL_DELTA). Positive dy scrolls up / away from the user; positive dx scrolls right."
+    },
+    "input_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "code",
+        "down"
+      ],
+      "properties": {
+        "t": {
+          "const": "input.key"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]{1,24}$"
+        },
+        "down": {
+          "type": "boolean"
+        }
+      },
+      "$comment": "code is a DOM KeyboardEvent.code value (e.g. KeyA, Enter, ArrowLeft, ControlLeft). The Host maps it to a Windows scan code; unknown codes are rejected."
+    },
+    "input_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "text"
+      ],
+      "properties": {
+        "t": {
+          "const": "input.text"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "$comment": "Unicode text typed as-is (KEYEVENTF_UNICODE)."
+    },
+    "input_release_all": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t"
+      ],
+      "properties": {
+        "t": {
+          "const": "input.release_all"
+        }
+      }
+    },
+    "stream_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "maxWidth",
+        "maxHeight",
+        "maxFps",
+        "maxBitrateKbps"
+      ],
+      "properties": {
+        "t": {
+          "const": "stream.start"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "maxWidth": {
+          "type": "integer",
+          "minimum": 160,
+          "maximum": 7680
+        },
+        "maxHeight": {
+          "type": "integer",
+          "minimum": 120,
+          "maximum": 4320
+        },
+        "maxFps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "maxBitrateKbps": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 50000
+        }
+      }
+    },
+    "stream_stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t"
+      ],
+      "properties": {
+        "t": {
+          "const": "stream.stop"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
+    "stream_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "state"
+      ],
+      "properties": {
+        "t": {
+          "const": "stream.state"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "streaming",
+            "stopped",
+            "error"
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        },
+        "fps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 240
+        },
+        "bitrateKbps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
+        }
+      }
+    },
+    "stream_stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "fps",
+        "bitrateKbps"
+      ],
+      "properties": {
+        "t": {
+          "const": "stream.stats"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        },
+        "fps": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 240
+        },
+        "bitrateKbps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "rttMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        }
+      }
+    },
+    "rtc_offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "sdp"
+      ],
+      "properties": {
+        "t": {
+          "const": "rtc.offer"
+        },
+        "sdp": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30000
+        }
+      }
+    },
+    "rtc_answer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "sdp"
+      ],
+      "properties": {
+        "t": {
+          "const": "rtc.answer"
+        },
+        "sdp": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30000
+        }
+      }
+    },
+    "rtc_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "candidate"
+      ],
+      "properties": {
+        "t": {
+          "const": "rtc.candidate"
+        },
+        "candidate": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 2000
+        },
+        "sdpMid": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "sdpMLineIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        }
+      }
+    },
+    "rtc_end": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t"
+      ],
+      "properties": {
+        "t": {
+          "const": "rtc.end"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
+        }
+      }
+    },
+    "clipboard_push": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "text",
+        "sha256"
+      ],
+      "properties": {
+        "t": {
+          "const": "clipboard.push"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "$comment": "Plain text only. text must be <= 16384 UTF-8 bytes (receivers measure bytes, maxLength is a cheap first filter); sha256 is hex of the UTF-8 bytes and doubles as loop-prevention key."
+    },
+    "clipboard_ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "ok"
+      ],
+      "properties": {
+        "t": {
+          "const": "clipboard.ack"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        }
+      }
+    },
+    "clipboard_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id"
+      ],
+      "properties": {
+        "t": {
+          "const": "clipboard.request"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
+    "media_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "action"
+      ],
+      "properties": {
+        "t": {
+          "const": "media.control"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "play_pause",
+            "next",
+            "prev",
+            "stop",
+            "vol_up",
+            "vol_down",
+            "mute"
+          ]
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        }
+      }
+    },
+    "media_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "ok",
+        "confirmed"
+      ],
+      "properties": {
+        "t": {
+          "const": "media.result"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        }
+      },
+      "$comment": "confirmed=false means the key event was injected but Windows exposes no way to confirm the target application acted on it."
+    },
+    "file_offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "transferId",
+        "name",
+        "size",
+        "sha256",
+        "chunkSize"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.offer"
+        },
+        "transferId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "chunkSize": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 24576
+        }
+      }
+    },
+    "file_accept": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "transferId",
+        "offset"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.accept"
+        },
+        "transferId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "file_reject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "transferId",
+        "reason"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.reject"
+        },
+        "transferId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "file_chunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "transferId",
+        "offset",
+        "data"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.chunk"
+        },
+        "transferId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "data": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]*$",
+          "maxLength": 32768
+        }
+      }
+    },
+    "file_ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "transferId",
+        "received"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.ack"
+        },
+        "transferId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "received": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "file_done": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "transferId"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.done"
+        },
+        "transferId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        }
+      }
+    },
+    "file_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "transferId",
+        "ok"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.result"
+        },
+        "transferId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "savedAs": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      }
+    },
+    "file_cancel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "transferId"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.cancel"
+        },
+        "transferId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        }
+      }
+    },
+    "file_list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.list"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
+    "file_listing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "files"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.listing"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "size",
+              "modifiedMs"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "modifiedMs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        }
+      }
+    },
+    "file_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "transferId",
+        "name"
+      ],
+      "properties": {
+        "t": {
+          "const": "file.request"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "transferId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        }
+      },
+      "$comment": "Asks the Host to send a file from its dedicated Outbox folder, by bare file name only. Never a path."
+    },
+    "power_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "action"
+      ],
+      "properties": {
+        "t": {
+          "const": "power.request"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "lock",
+            "sleep",
+            "restart",
+            "shutdown",
+            "cancel"
+          ]
+        }
+      }
+    },
+    "power_challenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "action",
+        "token",
+        "expiresInMs",
+        "delaySeconds"
+      ],
+      "properties": {
+        "t": {
+          "const": "power.challenge"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "lock",
+            "sleep",
+            "restart",
+            "shutdown",
+            "cancel"
+          ]
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22,64}$"
+        },
+        "expiresInMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 120000
+        },
+        "delaySeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600
+        }
+      }
+    },
+    "power_confirm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "token"
+      ],
+      "properties": {
+        "t": {
+          "const": "power.confirm"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22,64}$"
+        }
+      }
+    },
+    "power_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "t",
+        "id",
+        "ok",
+        "action"
+      ],
+      "properties": {
+        "t": {
+          "const": "power.result"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "lock",
+            "sleep",
+            "restart",
+            "shutdown",
+            "cancel"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "delaySeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600
+        }
+      }
+    }
+  }
+}

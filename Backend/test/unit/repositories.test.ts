@@ -47,12 +47,12 @@ test("DeviceRepository.authorize + isAuthorized + revoke lifecycle", () => {
   assert.equal(repo.isAuthorized("dev1", "host2"), false, "authorization is scoped to one host");
   assert.equal(repo.isAuthorized("unknown", "host1"), false);
 
-  const rec = repo.find("dev1");
+  const rec = repo.find("dev1", "host1");
   assert.deepEqual(rec?.permissions, ["mouse", "keyboard"]);
 
-  repo.revoke("dev1");
+  repo.revoke("dev1", "host1");
   assert.equal(repo.isAuthorized("dev1", "host1"), false);
-  assert.equal(repo.find("dev1")?.revoked, true);
+  assert.equal(repo.find("dev1", "host1")?.revoked, true);
 });
 
 test("DeviceRepository.listByHost only returns that host's devices", () => {

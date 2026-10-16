@@ -43,6 +43,11 @@ export class TokenBucketRateLimiter {
     return evicted;
   }
 
+  /** Forget one key (e.g. when the thing it throttles, such as a session, ends). */
+  delete(key: string): void {
+    this.buckets.delete(key);
+  }
+
   size(): number {
     return this.buckets.size;
   }

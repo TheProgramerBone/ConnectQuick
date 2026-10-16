@@ -24,6 +24,12 @@ const REDACTED_KEYS = new Set([
   "hostSignature",
   "signature",
   "clipboard",
+  "ct",
+  "sig",
+  "sdp",
+  "text",
+  "credential",
+  "turnSecret",
 ]);
 
 function redact(value: unknown): unknown {

@@ -43,3 +43,37 @@ export function pairingDecisionMessage(
 ): Buffer {
   return Buffer.from(`${pairingId}|${deviceId}|${approved ? 1 : 0}|${permissions.join(",")}`, "utf8");
 }
+
+/**
+ * Bytes the Controller signs (Ed25519, long-term identity key) to open a session. Binds the
+ * session to one Host, one Controller device, one ephemeral key and a timestamp, so a relay
+ * cannot splice a captured request onto another host/device or replay it later.
+ * Spec: Protocol/protocol-spec.md section 9.
+ */
+export function sessionConnectMessage(
+  sessionId: string,
+  hostId: string,
+  deviceId: string,
+  controllerEphPub: string,
+  issuedAt: number,
+): Buffer {
+  return Buffer.from(
+    `connectquick:session.connect:v1|${sessionId}|${hostId}|${deviceId}|${controllerEphPub}|${issuedAt}`,
+    "utf8",
+  );
+}
+
+/** Bytes the Host signs to accept a session; covers BOTH ephemeral keys and the granted permissions. */
+export function sessionAcceptMessage(
+  sessionId: string,
+  hostId: string,
+  deviceId: string,
+  controllerEphPub: string,
+  hostEphPub: string,
+  permissions: string[],
+): Buffer {
+  return Buffer.from(
+    `connectquick:session.accept:v1|${sessionId}|${hostId}|${deviceId}|${controllerEphPub}|${hostEphPub}|${permissions.join(",")}`,
+    "utf8",
+  );
+}

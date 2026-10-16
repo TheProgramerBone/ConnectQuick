@@ -23,6 +23,7 @@ WindowsHost/**/obj/
 
 # Android (Gradle) — scaffolding lands in a later phase
 Android/.gradle/
+Android/**/.gradle/
 Android/build/
 Android/**/build/
 Android/local.properties
@@ -33,3 +34,6 @@ Android/.cxx/
 *.pfx
 *.p12
 !Docs/**/*.pem.example
+
+# Cross-platform test harness
+Tests/node_modules/

@@ -11,7 +11,7 @@ test("full pairing flow: create -> init -> incoming -> decision -> result", asyn
 
     assert.ok(permissions.length > 0);
     assert.equal(server.ctx.devices.isAuthorized(controllerIdentity.deviceId, hostId), true);
-    const record = server.ctx.devices.find(controllerIdentity.deviceId);
+    const record = server.ctx.devices.find(controllerIdentity.deviceId, hostId);
     assert.equal(record?.deviceName, "Android de Juan");
     assert.deepEqual(record?.permissions, permissions);
 

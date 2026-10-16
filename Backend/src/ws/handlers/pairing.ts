@@ -4,6 +4,7 @@ import type { AppContext } from "../context.ts";
 import { newUuid, randomBytesB64Url, computeSas, verifyEd25519 } from "../../crypto.ts";
 import { RateLimitedError, NotFoundError, ForbiddenError } from "../../errors.ts";
 import { requireRole, deriveAndCheck, pairingDecisionMessage, DEFAULT_PAIRING_PERMISSIONS } from "./util.ts";
+import { endSession } from "./session.ts";
 
 /** Host asks for a new pairing session — the "Vincular nuevo dispositivo" button (§6-7). */
 export function handlePairingCreate(ctx: AppContext, conn: Connection, envelope: Envelope): void {
@@ -138,18 +139,24 @@ export function handlePairingDecision(ctx: AppContext, conn: Connection, envelop
   });
 }
 
-/** Host revokes a previously-authorized device (device management screen, §8). */
+/**
+ * Host revokes a previously-authorized device (device management screen, section 8). Revocation
+ * is immediate and complete: the authorization row is flagged, any live session of that device
+ * against this host is torn down on both ends, and the device is told. The device's WebSocket is
+ * NOT closed: it may be paired with other hosts and must keep working for them.
+ */
 export function handlePairingRevoke(ctx: AppContext, conn: Connection, envelope: Envelope): void {
   requireRole(conn, "host");
   const { deviceId } = envelope.payload as { deviceId: string };
-  const record = ctx.devices.find(deviceId);
-  if (!record || record.hostId !== conn.deviceId) {
+  const hostId = conn.deviceId!;
+  const record = ctx.devices.find(deviceId, hostId);
+  if (!record) {
     throw new NotFoundError("no such authorized device for this host");
   }
-  ctx.devices.revoke(deviceId);
-  const targetConn = ctx.connections.getController(deviceId);
-  if (targetConn) {
-    targetConn.send("pairing.revoked", { deviceId, reason: "revoked_by_host" });
-    targetConn.socket.close(4001, "revoked");
+  ctx.devices.revoke(deviceId, hostId);
+  for (const session of ctx.activeSessions.forDevice(deviceId, hostId)) {
+    endSession(ctx, session, "revoked");
   }
+  ctx.log.info("device revoked", { hostId, deviceId });
+  ctx.connections.getController(deviceId)?.send("pairing.revoked", { deviceId, hostId, reason: "revoked_by_host" });
 }

@@ -22,6 +22,8 @@ export class Connection {
   identityPub: string | null = null;
   clientVersion: string | null = null;
   lastActivityAt: number = Date.now();
+  /** Set when a newer connection of the same device took over; suppresses duplicate offline/teardown side effects. */
+  replaced = false;
 
   constructor(id: string, socket: WebSocket, remoteAddress: string, serverChallenge: string) {
     this.id = id;

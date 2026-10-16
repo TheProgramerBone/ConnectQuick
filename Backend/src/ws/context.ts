@@ -19,7 +19,13 @@ export interface AppContext {
   activeSessions: ActiveSessionStore;
   /** Keyed by remote IP — protects pairing.init against brute-forcing pairingId/nonce. */
   pairingInitLimiter: TokenBucketRateLimiter;
-  /** Keyed by connection id — generic flood protection independent of message type. */
+  /** Keyed by connection id — generic flood protection for control messages. */
   messageLimiter: TokenBucketRateLimiter;
+  /** Keyed by connection id — coarse pre-parse flood cap that also covers session.data. */
+  rawLimiter: TokenBucketRateLimiter;
+  /** sessionId -> expiry (ms). A session.connect whose sessionId was already seen is a replay. */
+  seenSessionIds: Map<string, number>;
+  /** Set while shutting down: /readyz fails and new connections are refused. */
+  draining: boolean;
   log: Logger;
 }
