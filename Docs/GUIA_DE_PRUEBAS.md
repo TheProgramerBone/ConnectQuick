@@ -48,9 +48,18 @@ Verás un aviso `WARN ... serving plaintext ws://` (normal, es desarrollo local)
 `listening` con el puerto (por defecto `8443`). Déjalo corriendo en esta terminal.
 
 **Primera vez**: es posible que Windows te pregunte si permites que `node.exe` se comunique en
-redes — acepta al menos para "Redes privadas". Si no aparece el aviso y el móvil no logra
-conectar más adelante, revisa el Firewall de Windows manualmente (Firewall de Windows Defender →
-Permitir una aplicación → busca `node.exe`).
+redes — acepta al menos para "Redes privadas". Si no aparece el aviso (lo más común: Windows no
+siempre lo muestra) necesitas abrir el puerto tú mismo, o el móvil se quedará conectando para
+siempre aunque la IP sea correcta:
+
+1. Abre PowerShell **como administrador** (clic derecho → "Ejecutar como administrador").
+2. Ejecuta:
+   ```powershell
+   New-NetFirewallRule -DisplayName "ConnectQuick Backend (8443)" -Direction Inbound -Protocol TCP -LocalPort 8443 -Action Allow -Profile Private,Domain
+   ```
+3. No hace falta reiniciar nada; la regla queda activa de inmediato.
+
+Esto solo hace falta la primera vez en cada PC — la regla queda guardada permanentemente.
 
 ## Paso 3 — Arranca el WindowsHost apuntando a tu IP (no a localhost)
 
@@ -95,7 +104,7 @@ Si ves eso en ambos lados, el pairing real de dos dispositivos ha funcionado de 
 
 | Síntoma | Causa probable |
 |---|---|
-| El móvil se queda en "Conectando..." y no pasa de ahí | El móvil no tiene alcance a `<IP-PC>:8443` — confirma que están en la misma red y que no hay un Firewall bloqueando el puerto. Prueba `ping <IP-PC>` desde el móvil (con una app de terminal) o simplemente confirma que ambos aparecen en la misma Wi-Fi. |
+| El móvil se queda en "Conectando..." y no pasa de ahí | Casi siempre es el Firewall de Windows bloqueando el puerto 8443 en silencio (sin aviso). Aplica el comando `New-NetFirewallRule` del Paso 2. Si ya lo hiciste, confirma que el móvil y el PC están en la misma red (no datos móviles) y que `<IP-PC>` es la correcta (vuelve a correr `ipconfig`, la IP puede cambiar entre reinicios). |
 | Error de "cleartext"/conexión rechazada nada más escanear | Estás usando un APK viejo (anterior a este mensaje) sin el permiso de tráfico `ws://` sin cifrar. Instala el APK que te acabo de enviar. |
 | El QR caduca antes de escanear | Tienes 60 segundos desde que se genera. Vuelve a pulsar "Vincular nuevo dispositivo". |
 | Pulsas "Sí, autorizar" y no pasa nada en el móvil | Revisa que el móvil siga conectado (si cambió de red Wi-Fi a datos móviles a mitad de proceso, perderá la conexión al backend LAN). |
@@ -117,8 +126,13 @@ equivocada, Firewall, redes distintas), no del código.
 
 ## Qué hacer si todo funciona
 
-Actualiza mentalmente (o dime y lo hago yo) `Docs/STATUS.md`: el pairing real entre WindowsHost y
-Android ya estaría probado con dos dispositivos de verdad, no solo con un simulador de cada lado.
-El siguiente hito natural sería la Fase 4 (ratón + teclado) — la pieza más pequeña que hace que el
-sistema empiece a controlar algo de verdad, antes de abordar el streaming de escritorio (Fase 5),
-que es un esfuerzo mayor por requerir WebRTC.
+✅ Ya verificado (11-sep-2026): el pairing real entre WindowsHost y Android, con dos dispositivos
+físicos distintos en la misma LAN, funciona de extremo a extremo — QR generado por el PC, escaneado
+por el móvil real, autorizado, y "Vinculado con..." confirmado en ambos lados. Ver `Docs/STATUS.md`
+para el detalle actualizado.
+
+Después de vincular, la app Android no tiene nada más que un botón de "Escanear otro QR" — **eso
+es lo esperado, no un fallo**: no hay pantalla remota ni control de ratón/teclado todavía (Fases
+4-9 de `Docs/STATUS.md`, sin empezar). El siguiente hito de desarrollo sería la Fase 4 (ratón +
+teclado), la pieza más pequeña que haría que el sistema controle algo de verdad, antes de abordar
+el streaming de escritorio (Fase 5), que es un esfuerzo mayor por requerir WebRTC.
