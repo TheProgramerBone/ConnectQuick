@@ -1,0 +1,19 @@
+{
+  "name": "connectquick-integration-tests",
+  "private": true,
+  "type": "module",
+  "description": "Cross-platform integration suite: real backend + real Windows Host runtime (.NET) + real Android controller core (Kotlin), each a separate process.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 \"integration/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "@types/ws": "^8.5.13",
+    "ws": "^8.18.0"
+  }
+}
