@@ -2,114 +2,93 @@
 
 ## Threat model
 
-The backend is treated as **not fully trusted** — compromised, subpoenaed, or simply curious
-operators of the relay should not be able to control a Host or read what flows between a paired
-Host and Controller. Concretely, the backend is trusted for: routing messages between the right
-two parties, enforcing rate limits, and storing public keys/metadata. It is *not* trusted to (and,
-by construction, mostly *cannot*) impersonate either party, forge an authorization it never saw
-granted, or read the content of a future desktop/input/clipboard/file stream.
+| Adversary | Goal | Outcome |
+|---|---|---|
+| The relay operator (or anyone who compromises the backend) | Read or inject control traffic, impersonate a PC or a phone, grant itself access | **Cannot.** Sessions are end-to-end encrypted and authenticated with keys it never holds; it can drop, delay or refuse service. It does learn *who* talks to *whom*, *when* and how much. |
+| A network attacker on either side's path | Eavesdrop, replay, tamper | TLS to the relay (required in release builds) plus the E2E layer; replayed or reordered frames are rejected. |
+| Someone who photographs/relays the pairing QR | Pair their own device | The PC shows an authorize dialog; both screens show the same 6-digit comparison code derived on each side from the exchanged keys. A mismatch means someone is in the middle: reject. |
+| A paired-but-malicious or compromised phone | Do more than it was granted | Cannot exceed the permissions granted at pairing, intersected with what the PC currently allows; cannot run commands (no such message exists); cannot read outside the shared/inbox folders; sensitive actions need extra confirmation. |
+| A compromised or buggy PC talking to the phone | Push bad data to the phone | The phone validates every inbound message, verifies clipboard hashes and sizes, never uses a PC-supplied file name as a path. |
+| Malware already running as the user on the PC | Take over | **Out of scope**: it can already do what ConnectQuick can do, and can use the DPAPI-protected identity. Mitigation is limited to not widening what it already has. |
+| A thief with the unlocked phone | Control the PC | Out of scope for now (no app lock). Revoke the phone from the PC. |
 
-## Device identity (implemented)
+## Device identity
 
-Every Host and Controller generates an **Ed25519** keypair on first run. `deviceId =
-base64url(SHA-256("connectquick:device:" || identityPub))[0:22]` — the id is a commitment to the
-public key, not an assignment from the server, so nobody (including the backend) can claim an id
-without the matching private key (see `Protocol/protocol-spec.md` §3, and
-`Protocol/test-vectors/` for the exact bytes). The private key never leaves the device and never
-crosses the network in any form; the backend stores only public keys.
+Each Host and Controller generates an **Ed25519** key pair on first run. `deviceId = base64url(SHA-256("connectquick:device:" || identityPub))[0:22]` — the id is a
+commitment to the key, so nobody can claim an id without the private key. The key never leaves the device. Windows: the seed is DPAPI-protected (current-user scope).
+Android: the seed is wrapped with an AES-256-GCM key in the Android Keystore (StrongBox when available, TEE otherwise).
 
-Where the private key lives is platform-specific and **not yet implemented** (no WindowsHost/
-Android project exists yet — see `STATUS.md`): the plan is DPAPI (`ProtectedData`, current-user
-scope) on Windows and Android Keystore (StrongBox/TEE-backed when available) on Android, per the
-protocol spec. The backend-side crypto (`Backend/src/crypto.ts`) and its tests already pin the
-exact wire format (`Protocol/test-vectors/crypto-vectors.json`) both platforms must produce.
+## Transport authentication
 
-## Transport authentication (implemented)
+The backend sends a fresh 32-byte challenge per connection; the client signs it (`hello`). A host/device id is pinned to the first key seen for it; a different key for the same id is rejected.
+A second connection with the same identity replaces the first, which is told to stop (close code 4010) instead of fighting for the slot.
 
-On connect, the backend sends a random 32-byte challenge; the client proves possession of its
-private key by signing it (`hello.challengeSig`). This is a fresh challenge per TCP/WS connection,
-so a captured signature can't be replayed on a new connection. This is *authentication* (who is
-this socket), separate from *authorization* (what is this socket allowed to do) — see below.
+## Pairing
 
-A hostId is pinned to the first public key ever seen for it (TOFU); a later `hello` claiming the
-same hostId with a *different* key is rejected (`Backend/src/ws/handlers/hello.ts`, tested in
-`Backend/test/integration/auth.test.ts`). This can't happen accidentally (the id is derived from
-the key), so in practice this check only matters against active tampering.
+The QR carries only public or short-lived material: `pairingId`, nonce, the Host's public identity key and a fresh ephemeral key, the relay URL, an expiry. The backend enforces a
+60 s TTL and consumes a `pairingId` exactly once. The Host's decision is signed over `pairingId|deviceId|approved|permissions`; the phone verifies that signature itself, so a
+backend cannot fabricate a grant. The comparison code (SAS) is computed independently on both sides and shown on both screens (**tested**: both derive identical digits).
+The PC's authorize dialog lists permissions as separate switches; remote power control is **never pre-selected**, and pressing Enter does not approve.
 
-## Pairing (implemented)
+## End-to-end sessions (`Protocol/protocol-spec.md` §7)
 
-QR contents (`Protocol/protocol-spec.md` §5) carry only public/short-lived material: a
-`pairingId`, a random `nonce`, the Host's long-term public key and a fresh ephemeral X25519 public
-key, the relay endpoint, and an expiry — never a password, private key, or reusable token. The
-backend enforces a 60s TTL server-side (not just as a UI hint) and a `pairingId` is
-**consumed exactly once** (`PairingRepository.tryConsume`, race-safe via a single conditional
-`UPDATE`) — a second `pairing.init` for the same id, whether a genuine retry or a replay attempt,
-is rejected with `already_used`.
+- Fresh **X25519** keys per session ⇒ forward secrecy; keys derived with **HKDF-SHA256** salted with a transcript hash that binds session id, both ids, both ephemeral keys and the granted permissions.
+- The handshake is **mutually authenticated by long-term Ed25519 signatures**: the Controller's over its request (bound to host, device, ephemeral key, timestamp), the Host's over *both* ephemeral keys and the permissions.
+  The Controller verifies the Host's signature against the key stored at pairing; the Host verifies the Controller against its **own** record of approved devices, not the relay's word.
+- Data: **AES-256-GCM**, one key per direction, 96-bit nonce from a strictly increasing 64-bit counter, AAD = session + direction + counter; a frame that fails authentication does not advance the counter; replay and reordering are dropped. At most 2³²−1 frames per session.
+- **Key confirmation**: the session is "established" only once the first encrypted frame from the Host decrypts. Liveness pings detect a silent peer.
+- Three independent implementations (TypeScript reference, .NET, Kotlin) reproduce the same **published vectors** (`Protocol/test-vectors/`), and cross-platform tests drive real processes through a real relay, including tampered, replayed and key-swapped handshakes.
 
-The Host's decision (`pairing.decision`) is itself signed with the Host's long-term key over
-`pairingId|deviceId|approved|permissions` (exact byte format and worked examples in
-`Protocol/protocol-spec.md` "Firma de la decisión de pairing" and the test vectors) — the backend
-verifies this before writing an authorization row, so a compromised backend cannot fabricate a
-device authorization the Host never actually approved; at most it can *withhold or drop* a
-legitimate one (a denial-of-service on pairing, not a spoofed grant).
+## What the backend sees and can do
 
-A **SAS (short authentication string)** — a 6-digit code derived from both parties' public
-material and the pairing nonce (`computeSas`) — is included in `pairing.incoming` so a Host's own
-UI can eventually display it for out-of-band comparison. This is groundwork for defending against
-a QR relayed through a malicious backend (the SAS would differ from what's shown on the Controller
-mid-scan); displaying it in the actual Host/Controller UI is a client-side concern for the
-not-yet-built WindowsHost/Android UIs.
+Sees: public keys, device names, permission lists, who connects to whom and when, frame sizes and rates, IP addresses. Does **not** see: mouse/keyboard, clipboard, files, power commands, SDP/ICE, anything in `session.data`.
+Can: refuse service, drop or delay frames, end sessions, hand out wrong ICE servers (which at worst forces a failed connection; media stays DTLS-SRTP-encrypted end to end). Cannot: read, alter without detection, or inject.
 
-## What the backend never sees (by design)
+## The PC as the policy point
 
-Payload schemas (`Protocol/schemas/payloads.schema.json`) only carry what pairing/presence/session
-negotiation strictly needs: public keys, device names, permission lists, connection state
-strings. There is no `type` today for desktop frames, keystrokes, clipboard, or file bytes — those
-are future phases, and the architecture decision for them (`ARCHITECTURE.md`, "desktop-stream/
-input plane") is specifically chosen so that when they exist, they ride a WebRTC DataChannel/media
-track whose DTLS-SRTP keys are negotiated between Host and Controller — the backend forwards
-opaque SDP/ICE blobs to set that channel up, but is not a party to the encryption itself. Until
-that's built, the honest current state is: this backend has nothing to relay for those functions
-because they don't exist yet, not because of a not-yet-verified encryption promise.
+Effective access for a session = **permissions granted at pairing ∩ switches currently enabled on the PC**. Turning a switch off on the PC takes effect on the very next message, without re-pairing.
+Defaults are conservative: power = **lock only**; pairing pre-selects everything *except* power; clipboard auto-push is **off**; "ask me for every connection" is available.
+"Disconnect phone now" cuts a live session immediately; revoking a device cuts its session and removes its trust even if the relay is unreachable.
 
-## Abuse resistance (implemented)
+Every inbound message passes: decrypt → JSON-Schema validation → route lookup → permission → per-type rate limit → handler. Invalid, unknown or forbidden messages get `ctl.error`; 25 violations end the session.
+At session end, **every held key and mouse button is released** (also if the phone dies, the network drops or the relay goes away — tested).
 
-- **Rate limiting**: `pairing.create` capped per host (via DB row counts, not just an in-memory
-  bucket — survives a process restart mid-abuse), `pairing.init` capped per source IP (token
-  bucket), and a generic per-connection message-rate cap independent of message type. All three
-  are covered in `Backend/test/integration/rateLimit.test.ts` against the real server.
-- **Strict schema validation**: every envelope and payload is validated against
-  `Protocol/schemas/*.json` with `additionalProperties: false` — an unknown field, wrong type, or
-  unrecognized `type` is rejected before any handler runs (`Backend/src/schemaValidator.ts`).
-  There is deliberately no catch-all/"execute what you understand" fallback.
-- **Message size cap**: 64 KiB, enforced both at the WebSocket layer (`maxPayload`) and again in
-  `parseEnvelope` (defense in depth — the second check matters for anything that constructs an
-  envelope in-process rather than off the wire, e.g. future test/tooling code).
-- **No generic command execution, ever**: the protocol has no `ExecuteShellCommand`-shaped
-  message and never will (`Protocol/protocol-spec.md` §1); every Host-side action is (or, for
-  not-yet-built phases, will be) its own explicit, schema-validated message type. This rules out
-  an entire class of command-injection bugs by construction rather than by input sanitization.
-- **Idle/auth timeouts**: a connection that never completes `hello` within 10s is dropped; a
-  connection (authenticated or not) that goes silent (no traffic, including heartbeats) for
-  `heartbeatTimeoutMs` is swept — bounds resource use from slow-loris-style or simply abandoned
-  connections.
+## Features
 
-## Logging (implemented)
+- **Input**: physical scancodes; text is Unicode without control characters; ranges clamped; held state tracked for guaranteed release. Windows UIPI means elevated windows ignore injected input; ConnectQuick does not attempt to bypass UAC.
+- **Screen**: captured only while a stream is active and the permission is on; a UAC prompt / lock screen is reported ("secure desktop") instead of captured; stops with the session. No audio, no recording.
+- **Clipboard**: text only, size-capped, hash-verified, no echo loops, auto-push off by default, items that Windows marks as excluded from history (password managers) are not auto-sent.
+- **Files**: the phone can write only into the PC's inbox and read only what is in the PC's "share" folder, **by name matched against a directory listing** — no path ever crosses the wire. Names are sanitised (separators, `..`, control and bidi characters, reserved Windows device names, trailing dots/spaces, length); the destination and each existing target are checked for symlinks/junctions;
+  data lands in a private `.part` file and becomes visible only after the SHA-256 matches; more bytes than announced, gaps, or a hash mismatch discard everything; size and free-space limits; resume; duplicate detection; Zone.Identifier (mark-of-the-web) is set on received files. The phone applies the same name sanitisation to files coming from the PC.
+- **Power**: lock and cancel are immediate; sleep/restart/shutdown need a one-time token returned **after** an explicit confirmation on the phone; tokens expire quickly and are bound to the session; restart/shutdown have a cancellable grace period; the PC notifies on screen when a power action executes. Policy can be disabled or lock-only on the PC. **There is no message that runs a command, a script or a program** — the "apps" permission has no implementation and is never granted or shown.
 
-`Backend/src/log.ts` redacts a fixed set of sensitive field names (`privateKey`, `sessionKey`,
-`password`, `token`, `signature`, `clipboard`, …) recursively in any structured log call. Handlers
-log identifiers (deviceId, hostId, message type) for diagnosability, never key material or
-payload contents wholesale.
+## Backend hardening
 
-## Known gaps (not yet addressed — tracked, not hidden)
+- Strict envelope/payload schemas (`additionalProperties: false`); 64 KiB message cap at the WebSocket layer and again in the parser; per-connection and per-IP rate limits; `pairing.create` limits counted in the database (they survive a restart) and per-IP `pairing.init` limits, both configurable for shared NATs (`PAIRING_*`).
+- Per-session frame/byte budgets, bounded send queues (`peer_too_slow`), idle/accept/max-duration timeouts, a replay window and unique-`sessionId` check on `session.connect`, one session per device and per host.
+- Origin allow-list for browsers (`ALLOWED_ORIGINS`), `TRUST_PROXY` only when explicitly set, TLS via `CERT_PATH`/`KEY_PATH` or a terminating proxy, `/healthz`, `/readyz`, bearer-protected `/metrics`, graceful drain.
+- TURN credentials are ephemeral (`user = expiry:deviceId`, HMAC-SHA1 with a shared secret) and the backend refuses to advertise TURN without a secret.
+- Logging redacts keys, tokens, signatures and clipboard-like fields; the Host's own log (`%APPDATA%\ConnectQuick\logs`) records identifiers and counts only — never clipboard text, file contents, SDP or key material — and caps single messages at 300 characters.
+- Release Android builds only allow TLS (`wss://`); plain `ws://` is enabled for **debug builds only** (`src/debug/res/xml/network_security_config.xml`).
 
-- **No path-traversal/file-permission/power-action hardening exists yet** because the
-  files/power/apps message types themselves don't exist yet (see `STATUS.md`). When they're
-  built, the requirement is: normalize + resolve real paths server-*and*-Host-side, reject
-  anything that escapes an allow-listed root, and treat every filesystem/power/process action as
-  its own typed, explicitly-permissioned message — never a path or command string trusted as-is.
-- **Session media is not yet end-to-end encrypted** because there is no session media yet — the
-  `session.connect`/`session.state` primitives implemented today only negotiate *that* a session
-  exists, not any data plane on top of it.
-- **Horizontal scaling of the backend has no shared-state story yet** (see `ARCHITECTURE.md`) —
-  not a confidentiality issue, but worth flagging as an availability/scale gap.
+## Dependencies
+
+`npm audit` reports 0 vulnerabilities after `npm audit fix` (the only finding was a moderate `fast-uri`). In the .NET streaming stack the SIPSorcery dependency chain resolved `System.Net.Http 4.3.0` and
+`System.Text.RegularExpressions 4.3.0` (both high severity); the project now pins the patched 4.3.4 / 4.3.1 and `dotnet list package --vulnerable --include-transitive` reports none.
+NuGet/Maven/npm packages are not signed or reproducibly pinned beyond lock files; there is no SBOM yet.
+
+## Known gaps and honest limits
+
+- **Not externally reviewed or fuzzed.** The cryptographic design follows standard constructions (X25519, HKDF, AES-GCM, Ed25519) but is a custom protocol; get it reviewed before relying on it for anything sensitive.
+- **Win32 adapters, the WinForms UI and the whole Android UI have never run on real hardware** (`Docs/STATUS.md`). Security-relevant behaviour implemented in those layers (DPAPI, `SendInput`, junction checks, Zone.Identifier, MediaStore) is code-reviewed and unit-tested where it can be, but not exercised on Windows/Android.
+- No certificate pinning on the phone; no app lock/biometric gate on the phone; no remote attestation of the PC; the identity seed is as safe as the user account (DPAPI) / the Keystore.
+- Metadata (who, when, how much, IPs, device names) is visible to the relay operator. Device names are chosen by the devices and are shown in dialogs — treat them as untrusted text.
+- The relay can deny service; a malicious relay can also point peers at a hostile ICE/TURN server — media remains DTLS-SRTP encrypted, but connectivity can be denied.
+- Video is only as private as the screen it shows: an unlocked, authorised phone sees everything on the primary monitor. Only the primary monitor is captured.
+- Clipboard and keystrokes are visible to whatever else runs on the PC as the same user. Passwords typed through ConnectQuick pass through the phone's keyboard.
+- Releases are not code-signed; the first run on Windows will show SmartScreen.
+- Single backend instance (see `Docs/ARCHITECTURE.md`, *Scaling*).
+
+## Reporting
+
+There is no public disclosure channel yet. Until one exists, report security issues privately to the project owner rather than in a public issue.

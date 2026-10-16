@@ -1,138 +1,137 @@
-# Guía de pruebas — WindowsHost + Android, en dos dispositivos reales
+# Guía de pruebas — del código automático al PC y el móvil reales
 
-Esta guía es para probar **de verdad** el vínculo (pairing) entre el PC y el móvil: el backend
-real, el WindowsHost real, y la app Android real, uno hablando con el otro. Es justo lo que
-`Docs/STATUS.md` marca como pendiente ("WindowsHost y Android nunca se han ejecutado el uno contra
-el otro" — hasta ahora cada uno se probó por separado contra un simulador del otro).
+Esta guía tiene dos partes: **(A)** las pruebas automáticas que se pueden ejecutar en cualquier máquina y
+**(B)** la prueba manual con un PC Windows y un móvil Android reales. La parte B es la que **todavía no se ha
+hecho para esta versión**: todo lo que toca Windows de verdad (inyección de teclado/ratón, portapapeles, captura de
+pantalla, teclas multimedia, energía, la interfaz WinForms) y toda la app Android (interfaz, cámara, vídeo) se ha
+compilado y probado por lógica, pero **nunca se ha ejecutado en un dispositivo**. Léelo como una lista de verificación para
+descubrir qué falla la primera vez, no como una demostración de que funciona. Estado exacto en `Docs/STATUS.md`.
 
-## Qué vas a poder probar (y qué no)
+---
 
-✅ Vincular el móvil con el PC por código QR: ver el QR, escanearlo, autorizar, y que el móvil
-confirme "Vinculado con...".
+## A. Pruebas automáticas
 
-⛔ Todo lo demás **no existe todavía**: no hay pantalla remota, ni ratón/teclado, ni portapapeles,
-ni archivos, ni apagar/reiniciar el PC. Eso son fases futuras (`Docs/STATUS.md`, Fases 4-9). Si
-después de vincular no pasa nada más, es lo esperado, no un fallo.
-
-## Requisitos
-
-- El PC con **.NET 8 SDK** y **Node.js ≥ 22.5** instalados (ya los tienes si seguiste las guías
-  anteriores).
-- Un móvil Android con el APK instalado (te lo he enviado por el chat; si prefieres compilarlo tú,
-  ver `Android/README.md`).
-- **El PC y el móvil en la misma red Wi-Fi/LAN.** El backend de pruebas habla `ws://` sin cifrar —
-  no es accesible desde fuera de tu red, y no debe usarse así en producción (ver
-  `Backend/README.md`, sección "Production notes").
-
-## Paso 1 — Averigua la IP de tu PC en la red local
-
-El móvil no puede usar `localhost` para llegar al backend — `localhost` en el móvil es el propio
-móvil. Necesitas la IP de tu PC en la LAN:
-
-```powershell
-ipconfig
-```
-
-Busca el adaptador Wi-Fi/Ethernet que estés usando y anota su "Dirección IPv4" (algo como
-`192.168.1.23`). La llamaremos `<IP-PC>` en el resto de esta guía.
-
-## Paso 2 — Arranca el backend
+Ejecútalas en este orden; si una falla, las siguientes no te dirán nada fiable.
 
 ```sh
-cd Backend
-npm install     # solo la primera vez
-npm run dev
+cd Backend      && npm install && npm test            # 95 pruebas (servidor real, cripto real) + tabla de cobertura
+cd Backend      && npm run loadtest                    # opcional: carga del relé (latencia, CPU, memoria)
+cd WindowsHost  && dotnet test src/ConnectQuick.WindowsHost.Tests     # 156 pruebas (en Linux/macOS también)
+cd Android      && ./gradlew -p controller-core test   # 89 pruebas JVM (lanza el backend real)
+cd Tests        && npm install && npm test             # 40 escenarios entre procesos reales (ver Tests/README.md)
 ```
 
-Verás un aviso `WARN ... serving plaintext ws://` (normal, es desarrollo local) y luego
-`listening` con el puerto (por defecto `8443`). Déjalo corriendo en esta terminal.
+Qué demuestra cada una, y qué **no**:
 
-**Primera vez**: es posible que Windows te pregunte si permites que `node.exe` se comunique en
-redes — acepta al menos para "Redes privadas". Si no aparece el aviso (lo más común: Windows no
-siempre lo muestra) necesitas abrir el puerto tú mismo, o el móvil se quedará conectando para
-siempre aunque la IP sea correcta:
+| Suite | Demuestra | No demuestra |
+|---|---|---|
+| Backend | autenticación, pairing, relé E2E, límites, ICE/TURN, endurecimiento | nada de los clientes |
+| WindowsHost.Tests | sesión cifrada, validación, permisos, entrada, portapapeles, multimedia, archivos (nombres hostiles), energía, streaming (ICE/DTLS/RTP en bucle local) | efecto real en un escritorio Windows |
+| controller-core | handshake y verificación de firmas, gestos del touchpad, clientes de funciones, reconexión, textos de estado | la app Android |
+| Tests/ | PC (.NET) ↔ relé ↔ móvil (Kotlin) como procesos reales: pairing, todas las funciones, revocación, caída del PC, reinicio del backend, cambio de red, partición de red silenciosa | Win32, GDI/VP8, libwebrtc, interfaces |
 
-1. Abre PowerShell **como administrador** (clic derecho → "Ejecutar como administrador").
-2. Ejecuta:
-   ```powershell
-   New-NetFirewallRule -DisplayName "ConnectQuick Backend (8443)" -Direction Inbound -Protocol TCP -LocalPort 8443 -Action Allow -Profile Private,Domain
-   ```
-3. No hace falta reiniciar nada; la regla queda activa de inmediato.
+Para compilar la interfaz Windows hace falta Windows (`dotnet build WindowsHost/ConnectQuick.WindowsHost.sln`); en Linux/macOS esa
+parte no compila (falta el SDK de escritorio) y el resto sí.
 
-Esto solo hace falta la primera vez en cada PC — la regla queda guardada permanentemente.
+---
 
-## Paso 3 — Arranca el WindowsHost apuntando a tu IP (no a localhost)
+## B. Prueba manual: PC Windows + móvil Android
 
-En otra terminal:
+### Requisitos
+
+- PC con Windows 10/11, **.NET 8 SDK** y **Node.js ≥ 22.5**.
+- Móvil Android 8.0+ (el APK es `arm64-v8a`). Compílalo con `cd Android && ./gradlew assembleDebug` (JDK 17 + Android SDK 34) e instálalo con `adb install`
+  o por archivo. **La primera compilación real puede dar errores que el entorno de desarrollo no pudo detectar**: arréglalos y repórtalos.
+- PC y móvil en la **misma Wi-Fi** para la prueba básica. La compilación *debug* acepta `ws://`; una compilación *release* exige `wss://`.
+
+### 1. IP del PC y backend
+
+```powershell
+ipconfig                     # apunta tu IPv4, p. ej. 192.168.1.23  (la llamaremos <IP-PC>)
+cd Backend; npm install; npm run dev        # ws://0.0.0.0:8443 (texto plano: solo desarrollo)
+```
+
+Abre el puerto si Windows no te pregunta (PowerShell como administrador):
+
+```powershell
+New-NetFirewallRule -DisplayName "ConnectQuick Backend (8443)" -Direction Inbound -Protocol TCP -LocalPort 8443 -Action Allow -Profile Private,Domain
+```
+
+### 2. Arranca el Host
 
 ```powershell
 cd WindowsHost
-$env:CONNECTQUICK_RELAY = "ws://<IP-PC>:8443"
+$env:CONNECTQUICK_RELAY = "ws://<IP-PC>:8443"      # nunca localhost: el móvil no podría llegar
 dotnet run --project src/ConnectQuick.WindowsHost
 ```
 
-(Sustituye `<IP-PC>` por la IP del Paso 1, por ejemplo `ws://192.168.1.23:8443`.)
+Debe aparecer el icono de ConnectQuick en la bandeja (junto al reloj) y, al hacer clic, la ventana "ConnectQuick" con **Estado**. Comprueba:
 
-No se abre ninguna ventana — busca el icono de ConnectQuick en la bandeja del sistema (junto al
-reloj; puede estar oculto tras la flecha "▲" de iconos ocultos).
+- [ ] El estado pasa a **«Listo · esperando a tu teléfono»** (forma de círculo relleno) en unos segundos. Si dice «Sin conexión con el servidor», revisa backend/firewall.
+- [ ] Cerrar la ventana la oculta pero el icono sigue; abrir una segunda copia avisa de que ya se está ejecutando.
+- [ ] Con *Windows → Accesibilidad → Contraste alto* la ventana sigue legible (colores del sistema).
 
-## Paso 4 — Genera el código QR
+### 3. Vincula el móvil
 
-Clic derecho en el icono de la bandeja → **"Vincular nuevo dispositivo"**. Se abre una ventana con
-el QR y una cuenta atrás de 60 segundos (pasado ese tiempo el código caduca y hay que generar uno
-nuevo).
+1. PC: **Vincular un teléfono** → aparece el QR con cuenta atrás (60 s).
+2. Móvil: **Vincular un PC** → **Escanear código QR** → permiso de cámara → apunta al QR.
+3. El móvil muestra un **código de 6 cifras**; el PC muestra la ventana «quiere controlar este PC» con **otro código**.
+   - [ ] **Los dos códigos son idénticos.** Si no lo son, rechaza: es exactamente el ataque que protege esta comprobación.
+4. En el PC elige qué conceder (la energía **no** viene marcada; Enter no autoriza). **Para probar Energía, marca «Bloquear, suspender y apagar»** → **Autorizar**. Sin ese permiso el botón Energía del móvil dirá «Sin permiso: se concede en el PC» (comportamiento correcto).
+- [ ] El móvil vuelve a Inicio y dice **Conectado a «tu PC»** (círculo verde). En el PC, **Dispositivos** lista el teléfono como «Conectado ahora».
 
-## Paso 5 — Escanea desde el móvil
+### 4. Lista de comprobación por función
 
-Abre la app **ConnectQuick** en el Android → **"Escanear código QR"** → concede el permiso de
-cámara la primera vez → apunta al QR de la pantalla del PC.
+Marca lo que funciona y anota el síntoma de lo que no. "PC" = Windows; "Móvil" = Android.
 
-## Paso 6 — Autoriza en el PC
+| Función | Qué hacer | Esperado |
+|---|---|---|
+| Touchpad | Móvil → Touchpad: desliza; toca; toca con dos dedos; dos dedos arriba/abajo; toca y arrastra sobre una ventana | El puntero se mueve; clic izquierdo; clic derecho; desplazamiento; selección/arrastre |
+| Botones de clic | Mantén «Clic izquierdo» y arrastra con otro dedo | Arrastre; al soltar se suelta el botón |
+| Teclado | Escribe `hola ñandú ✓` en el campo; Esc, Tab, flechas, Supr, ⌫, ↵; activa Ctrl y pulsa una letra | El texto aparece en la aplicación enfocada del PC; atajos funcionan |
+| **Liberación** | Mantén Shift activado y **cierra la app / apaga el Wi-Fi del móvil** | En ≤ 1 minuto (inmediato si cierras la sesión) Shift deja de estar pulsada en el PC — comprueba escribiendo en el PC |
+| Pantalla | Móvil → Pantalla (misma Wi-Fi) | Imagen del escritorio; toca para mover el puntero, toca para clic, mantén pulsado para clic derecho; cambia Calidad |
+| Pantalla protegida | En el PC lanza algo que pida UAC o bloquea (Win+L) | El móvil dice «pantalla protegida» (no se ve negro como si nada); al volver, se reanuda |
+| Portapapeles | Copia texto en el PC → móvil «Traer lo copiado en el PC»; copia en el móvil → «Enviar al PC» y pega en el PC | Llega en ambos sentidos; texto vacío/no-texto lo explica |
+| Multimedia | Reproduce música/vídeo; ⏯ ⏭ ⏮ − + Silenciar | El PC reacciona; el móvil dice «Enviado», **nunca** «reproduciendo» |
+| Archivos →PC | Móvil → Archivos → Enviar un archivo | Aparece en `Descargas\ConnectQuick` del PC con el contenido idéntico; repetir el mismo archivo se detecta |
+| Archivos ←PC | Copia un archivo a `~\ConnectQuick\Outbox` → «Ver archivos que comparte el PC» → pulsa | Llega a *Descargas/ConnectQuick* del móvil |
+| Nombres hostiles | (opcional) En Outbox crea un archivo con nombre largo o con caracteres raros | El nombre llega saneado; nunca fuera de la carpeta |
+| Energía (bloquear) | (con el permiso de energía concedido) Móvil → Energía → Bloquear | El PC se bloquea (con la política por defecto «solo bloquear») |
+| Energía (resto) | Pulsa Apagar con la política por defecto | El móvil explica que el PC solo permite bloquear |
+| Energía (confirmación) | En el PC, Permisos y ajustes → Energía → «Bloquear, suspender, reiniciar y apagar» (confirma el aviso); móvil → **Suspender** | Aparece un diálogo en el móvil que nombra la acción; **Cancelar** no hace nada; solo tras confirmar el PC actúa. Prueba con **Reiniciar** y cancela durante el margen de gracia |
 
-En cuanto el móvil escanea, en el PC aparece una ventana **"¿Autorizar?"** con el nombre del
-dispositivo y un código de 6 dígitos (SAS). Pulsa **"Sí, autorizar"**.
+### 5. Controles del PC (la persona frente al PC manda)
 
-## Paso 7 — Comprueba el resultado
+- [ ] Apaga «Ratón» en Permisos y ajustes: el touchpad deja de funcionar **de inmediato** y la app lo explica (sin volver a vincular).
+- [ ] «Desconectar el teléfono» en Estado corta la sesión al instante; el móvil se reconecta solo (puedes pausar con «Aceptar conexiones»).
+- [ ] «Preguntarme en cada conexión»: al reconectar el móvil aparece el aviso con cuenta atrás; **Denegar** (o dejarlo caducar) rechaza.
+- [ ] Dispositivos → **Revocar acceso**: la sesión se corta y el móvil muestra «Acceso revocado» y ofrece vincular de nuevo.
 
-- En el **móvil**: el texto de estado cambia a `Vinculado con "<nombre-del-PC>" ✓`.
-- En el **PC**: el icono de la bandeja muestra un aviso ("... ha sido autorizado") y el
-  dispositivo aparece en el menú **"Dispositivos vinculados"** (clic derecho en el icono).
+### 6. Resiliencia manual
 
-Si ves eso en ambos lados, el pairing real de dos dispositivos ha funcionado de extremo a extremo.
+- [ ] Cierra ConnectQuick en el PC desde la bandeja (Salir): el móvil pasa a «no está disponible» y se conecta solo al reabrirlo.
+- [ ] Apaga y enciende el Wi-Fi del móvil durante una sesión: reconecta sin intervención (la pantalla/archivos en curso terminan, el control vuelve).
+- [ ] Reinicia el backend (`Ctrl+C`, `npm run dev`): ambos extremos se reconectan; no hace falta volver a vincular.
 
-## Solución de problemas
+### 7. Pantalla desde otra red (necesita TURN)
+
+Sin un servidor TURN, desde datos móviles es normal que el vídeo no conecte: la app lo dirá («no hay servidor de relevo»). Para probarlo: monta coturn y arranca el backend con
+`TURN_URLS` / `TURN_SECRET` (`Docs/ARCHITECTURE.md`, *Running TURN*), usa `wss://` y repite el punto «Pantalla» con el móvil en datos móviles.
+**Esta ruta no se ha probado nunca contra un TURN real.**
+
+### Solución de problemas
 
 | Síntoma | Causa probable |
 |---|---|
-| El móvil se queda en "Conectando..." y no pasa de ahí | Casi siempre es el Firewall de Windows bloqueando el puerto 8443 en silencio (sin aviso). Aplica el comando `New-NetFirewallRule` del Paso 2. Si ya lo hiciste, confirma que el móvil y el PC están en la misma red (no datos móviles) y que `<IP-PC>` es la correcta (vuelve a correr `ipconfig`, la IP puede cambiar entre reinicios). |
-| Error de "cleartext"/conexión rechazada nada más escanear | Estás usando un APK viejo (anterior a este mensaje) sin el permiso de tráfico `ws://` sin cifrar. Instala el APK que te acabo de enviar. |
-| El QR caduca antes de escanear | Tienes 60 segundos desde que se genera. Vuelve a pulsar "Vincular nuevo dispositivo". |
-| Pulsas "Sí, autorizar" y no pasa nada en el móvil | Revisa que el móvil siga conectado (si cambió de red Wi-Fi a datos móviles a mitad de proceso, perderá la conexión al backend LAN). |
-| El WindowsHost no aparece en la bandeja | Revisa la terminal donde hiciste `dotnet run` por si hay un error (por ejemplo, el backend no está arrancado todavía). |
+| El móvil se queda en «Conectando con el servidor…» | Firewall (puerto 8443), IP equivocada, o PC y móvil en redes distintas. Una compilación *release* además rechaza `ws://`. |
+| «Sin permiso: se concede en el PC» en un botón | El permiso no se concedió al vincular o está apagado en *Permisos y ajustes*. Vincula de nuevo o actívalo. |
+| El teclado no escribe en una ventana concreta | Esa ventana se ejecuta como administrador (Windows lo impide a propósito). |
+| Pantalla negra / «pantalla protegida» | UAC o pantalla de bloqueo: Windows no permite capturarla. |
+| «No se pudo mostrar la pantalla… sin servidor de relevo» | Redes distintas sin TURN. Misma Wi-Fi, o monta TURN. |
+| El vídeo no aparece en la misma Wi-Fi | Firewall de Windows bloqueando UDP al proceso `dotnet`/ConnectQuick; revisa también aislamiento de clientes en el router. |
 
-## Antes de probar en real: pruebas automáticas (opcional pero recomendado)
+### Qué adjuntar al reportar un fallo
 
-Si algo falla en las pruebas manuales, estos comandos aíslan si el problema es de red/entorno o de
-código — ambos pasan hoy sin necesitar dos dispositivos:
-
-```sh
-cd Backend && npm test
-cd WindowsHost && dotnet test src/ConnectQuick.WindowsHost.Tests/ConnectQuick.WindowsHost.Tests.csproj
-cd Android && ./gradlew testDebugUnitTest
-```
-
-Si estos tres pasan pero la prueba manual falla, el problema casi seguro es de red local (IP
-equivocada, Firewall, redes distintas), no del código.
-
-## Qué hacer si todo funciona
-
-✅ Ya verificado (11-sep-2026): el pairing real entre WindowsHost y Android, con dos dispositivos
-físicos distintos en la misma LAN, funciona de extremo a extremo — QR generado por el PC, escaneado
-por el móvil real, autorizado, y "Vinculado con..." confirmado en ambos lados. Ver `Docs/STATUS.md`
-para el detalle actualizado.
-
-Después de vincular, la app Android no tiene nada más que un botón de "Escanear otro QR" — **eso
-es lo esperado, no un fallo**: no hay pantalla remota ni control de ratón/teclado todavía (Fases
-4-9 de `Docs/STATUS.md`, sin empezar). El siguiente hito de desarrollo sería la Fase 4 (ratón +
-teclado), la pieza más pequeña que haría que el sistema controle algo de verdad, antes de abordar
-el streaming de escritorio (Fase 5), que es un esfuerzo mayor por requerir WebRTC.
+El registro (*Registro → Copiar registro*, o `%APPDATA%\ConnectQuick\logs\connectquick.log`; no contiene claves ni contenido), la salida del backend, el modelo de móvil y versión de Android,
+y la captura de pantalla de la app. Los fallos de *aspecto* en la primera ejecución son esperables: ninguna de las dos interfaces se ha visto nunca en pantalla.
