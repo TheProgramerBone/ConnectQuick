@@ -25,7 +25,10 @@ public sealed class AuthorizedDeviceStore
         _devices = Load();
     }
 
-    public IReadOnlyList<AuthorizedDevice> All => _devices;
+    public IReadOnlyList<AuthorizedDevice> All { get { lock (_devices) return _devices.ToList(); } }
+
+    /// <summary>Raised after a device is added or removed (on the calling thread); the UI refreshes its list from it.</summary>
+    public event Action? Changed;
 
     private List<AuthorizedDevice> Load()
     {
@@ -45,19 +48,29 @@ public sealed class AuthorizedDeviceStore
     {
         var dir = Path.GetDirectoryName(_filePath)!;
         Directory.CreateDirectory(dir);
-        File.WriteAllText(_filePath, JsonSerializer.Serialize(_devices));
+        var tmp = _filePath + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(_devices));
+        File.Move(tmp, _filePath, overwrite: true); // atomic: a crash mid-write cannot corrupt the list of trusted devices
     }
 
     public void Add(AuthorizedDevice device)
     {
-        _devices.RemoveAll(d => d.DeviceId == device.DeviceId);
-        _devices.Add(device);
-        Save();
+        lock (_devices)
+        {
+            _devices.RemoveAll(d => d.DeviceId == device.DeviceId);
+            _devices.Add(device);
+            Save();
+        }
+        Changed?.Invoke();
     }
 
     public void Remove(string deviceId)
     {
-        _devices.RemoveAll(d => d.DeviceId == deviceId);
-        Save();
+        lock (_devices)
+        {
+            _devices.RemoveAll(d => d.DeviceId == deviceId);
+            Save();
+        }
+        Changed?.Invoke();
     }
 }

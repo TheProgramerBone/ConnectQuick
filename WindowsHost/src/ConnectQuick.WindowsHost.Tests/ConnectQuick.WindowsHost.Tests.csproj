@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- Tests target the platform-neutral Core, so the whole suite runs on Linux CI as well as Windows. -->
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
@@ -22,7 +23,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ConnectQuick.WindowsHost\ConnectQuick.WindowsHost.csproj" />
+    <ProjectReference Include="..\ConnectQuick.WindowsHost.Core\ConnectQuick.WindowsHost.Core.csproj" />
+    <ProjectReference Include="..\ConnectQuick.WindowsHost.Testing\ConnectQuick.WindowsHost.Testing.csproj" />
+    <ProjectReference Include="..\ConnectQuick.WindowsHost.Streaming\ConnectQuick.WindowsHost.Streaming.csproj" />
   </ItemGroup>
 
 </Project>

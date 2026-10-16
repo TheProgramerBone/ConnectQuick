@@ -1,150 +1,251 @@
-using ConnectQuick.WindowsHost.Config;
-using ConnectQuick.WindowsHost.Identity;
+using ConnectQuick.WindowsHost.Diagnostics;
+using ConnectQuick.WindowsHost.Net;
 using ConnectQuick.WindowsHost.Pairing;
+using ConnectQuick.WindowsHost.Runtime;
+using ConnectQuick.WindowsHost.Session;
 
 namespace ConnectQuick.WindowsHost.Ui;
 
 /// <summary>
-/// Owns the tray icon and every window this app shows. Coordinator events arrive on background
-/// threads (WebSocket receive loop), so everything here marshals onto the UI thread via
-/// <see cref="_uiSync"/> before touching WinForms controls.
+/// Asks the person at the PC, on the UI thread, whether a paired phone may connect right now.
+/// Anything other than an explicit "Permitir" is a refusal.
 /// </summary>
-public sealed class TrayApplicationContext : ApplicationContext
+internal sealed class UiConnectionApprover : IConnectionApprover
 {
-    private readonly PairingCoordinator _coordinator;
-    private readonly AuthorizedDeviceStore _deviceStore;
-    private readonly HostConfig _config;
-    private readonly DeviceIdentity _identity;
-    private readonly NotifyIcon _trayIcon;
-    private readonly Control _uiSync; // invisible control purely to get an Invoke/BeginInvoke onto the UI thread
+    private Control? _ui;
+
+    public void Attach(Control ui) => _ui = ui;
+
+    public Task<bool> ApproveAsync(string deviceName, CancellationToken token)
+    {
+        var ui = _ui;
+        if (ui is null || !ui.IsHandleCreated) return Task.FromResult(false);
+        var result = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        ui.BeginInvoke(new Action(() =>
+        {
+            using var form = new SessionApprovalForm(deviceName);
+            using var cancel = token.Register(() => { try { form.BeginInvoke(new Action(form.Close)); } catch (InvalidOperationException) { } });
+            form.ShowDialog();
+            result.TrySetResult(form.Allowed);
+        }));
+        return result.Task;
+    }
+}
+
+/// <summary>
+/// Owns the tray icon and every window. Runtime events arrive on background threads (WebSocket loops,
+/// session pumps), so everything here marshals onto the UI thread before touching a control.
+/// </summary>
+internal sealed class TrayApplicationContext : ApplicationContext, IShellActions
+{
+    private readonly HostRuntime _rt;
+    private readonly UiConnectionApprover _approver;
+    private readonly NotifyIcon _tray;
+    private readonly Control _ui;
+    private readonly MainWindow _main;
+    private readonly ToolStripMenuItem _statusItem = new() { Enabled = false };
+    private readonly ToolStripMenuItem _pauseItem = new() { CheckOnClick = false };
+    private readonly ToolStripMenuItem _disconnectItem = new("Desconectar el teléfono");
 
     private PairingWindow? _pairingWindow;
+    private bool _connected;
+    private LinkState _lastIcon = LinkState.Offline;
+    private bool _firstHide = true;
 
-    public TrayApplicationContext(PairingCoordinator coordinator, AuthorizedDeviceStore deviceStore, HostConfig config, DeviceIdentity identity)
+    public TrayApplicationContext(HostRuntime rt, UiConnectionApprover approver)
     {
-        _coordinator = coordinator;
-        _deviceStore = deviceStore;
-        _config = config;
-        _identity = identity;
+        _rt = rt;
+        _approver = approver;
 
-        _uiSync = new Control();
-        _uiSync.CreateControl();
+        _ui = new Control();
+        _ui.CreateControl();
+        _approver.Attach(_ui);
 
-        _trayIcon = new NotifyIcon
+        _main = new MainWindow(rt, this);
+        _main.VisibleChanged += (_, _) => { if (!_main.Visible && _firstHide) { _firstHide = false; Notify("ConnectQuick sigue funcionando", "Está en la bandeja del sistema. Haz clic en el icono para abrirlo.", ToolTipIcon.Info); } };
+
+        _tray = new NotifyIcon { Icon = TrayIcons.Render(LinkState.Connecting), Text = "ConnectQuick", Visible = true, ContextMenuStrip = BuildMenu() };
+        _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) _main.ShowPage(0); };
+
+        _rt.Pairing.ConnectionChanged += connected => OnUi(() => { _connected = connected; UpdateTray(); });
+        _rt.Client.StateChanged += _ => OnUi(UpdateTray);
+        _rt.Pairing.PairingQrReady += qr => OnUi(() => ShowQr(qr));
+        _rt.Pairing.IncomingRequest += request => OnUi(() => AskToAuthorize(request));
+        _rt.Pairing.ErrorReceived += (code, message) => OnUi(() => Notify("ConnectQuick", FriendlyError(code, message), ToolTipIcon.Warning));
+        _rt.Sessions.SessionStarted += s => OnUi(() => { UpdateTray(); Notify("Teléfono conectado", $"«{s.DeviceName}» está controlando este PC.", ToolTipIcon.Info); });
+        _rt.Sessions.SessionEnded += (s, reason) => OnUi(() => { UpdateTray(); Notify("Sesión terminada", $"«{s.DeviceName}» se desconectó ({FriendlyReason(reason)}).", ToolTipIcon.Info); });
+        _rt.Settings.Changed += _ => OnUi(UpdateTray);
+        _rt.Client.Replaced += () => OnUi(() => Notify("ConnectQuick", "Otra copia de ConnectQuick con la misma identidad se conectó al servidor; esta se detuvo.", ToolTipIcon.Warning));
+        _rt.Log.Added += entry =>
         {
-            Icon = SystemIcons.Application,
-            Text = $"ConnectQuick — {_config.HostName} (conectando...)",
-            Visible = true,
-            ContextMenuStrip = BuildMenu(),
+            // Power actions executing on this PC must never be silent.
+            if (entry is { Category: "power", Level: LogLevel.Warn } && entry.Message.Contains("executing", StringComparison.Ordinal))
+                OnUi(() => Notify("Acción de energía", "Un teléfono autorizado ha ordenado " + entry.Message, ToolTipIcon.Warning));
         };
-        _trayIcon.DoubleClick += (_, _) => OnLinkNewDevice();
 
-        _coordinator.ConnectionChanged += OnConnectionChanged;
-        _coordinator.PairingQrReady += OnPairingQrReady;
-        _coordinator.IncomingRequest += OnIncomingRequest;
-        _coordinator.ErrorReceived += OnErrorReceived;
+        UpdateTray();
     }
+
+    // ---- IShellActions ----
+
+    public LinkState CurrentState
+    {
+        get
+        {
+            if (!_rt.Settings.Current.AcceptConnections) return LinkState.Paused;
+            if (_rt.Sessions.Active is not null) return LinkState.InSession;
+            return _rt.Client.State switch
+            {
+                SignalingState.Ready => LinkState.Ready,
+                SignalingState.Disconnected => LinkState.Offline,
+                _ => LinkState.Connecting,
+            };
+        }
+    }
+
+    public async void StartPairing()
+    {
+        try { await _rt.Pairing.StartNewPairingAsync(); }
+        catch (InvalidOperationException) { Notify("ConnectQuick", "Todavía no hay conexión con el servidor. Inténtalo en unos segundos.", ToolTipIcon.Warning); }
+    }
+
+    public void DisconnectPhone() => _rt.Sessions.EndActive("ended_by_user");
+
+    public async Task RevokeAsync(AuthorizedDevice device) => await _rt.RevokeAsync(device.DeviceId);
+
+    public bool Confirm(string title, string body, string confirmText, bool danger)
+    {
+        using var form = new ConfirmForm(title, body, confirmText, danger);
+        return form.ShowDialog(_main.Visible ? _main : null) == DialogResult.OK;
+    }
+
+    // ---- tray ----
 
     private ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add(new ToolStripMenuItem($"ConnectQuick — {_config.HostName}") { Enabled = false });
+        menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Vincular nuevo dispositivo", null, (_, _) => OnLinkNewDevice()));
-        var devicesItem = new ToolStripMenuItem("Dispositivos vinculados");
-        devicesItem.DropDownOpening += (_, _) => RefreshDevicesMenu(devicesItem);
-        menu.Items.Add(devicesItem);
+        menu.Items.Add(new ToolStripMenuItem("Abrir ConnectQuick", null, (_, _) => _main.ShowPage(0)));
+        menu.Items.Add(new ToolStripMenuItem("Vincular un teléfono…", null, (_, _) => StartPairing()));
+        menu.Items.Add(new ToolStripMenuItem("Dispositivos vinculados", null, (_, _) => _main.ShowPage(1)));
+        menu.Items.Add(new ToolStripMenuItem("Permisos y ajustes", null, (_, _) => _main.ShowPage(2)));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("Salir", null, (_, _) => ExitThread()));
+        _pauseItem.Click += (_, _) => _rt.Settings.Update(s => s.AcceptConnections = !s.AcceptConnections);
+        menu.Items.Add(_pauseItem);
+        _disconnectItem.Click += (_, _) => DisconnectPhone();
+        menu.Items.Add(_disconnectItem);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem("Salir", null, (_, _) => Quit()));
+        menu.Opening += (_, _) => UpdateMenu();
         return menu;
     }
 
-    private void RefreshDevicesMenu(ToolStripMenuItem devicesItem)
+    private void UpdateMenu()
     {
-        devicesItem.DropDownItems.Clear();
-        var devices = _deviceStore.All;
-        if (devices.Count == 0)
+        var state = CurrentState;
+        _statusItem.Text = $"{_rt.Config.HostName} · {LinkStateInfo.Label(state)}";
+        _pauseItem.Text = _rt.Settings.Current.AcceptConnections ? "Pausar conexiones" : "Reanudar conexiones";
+        _disconnectItem.Visible = _rt.Sessions.Active is not null;
+    }
+
+    private void UpdateTray()
+    {
+        var state = CurrentState;
+        if (state != _lastIcon)
         {
-            devicesItem.DropDownItems.Add(new ToolStripMenuItem("(ninguno todavía)") { Enabled = false });
+            _lastIcon = state;
+            _tray.Icon = TrayIcons.Render(state);
+        }
+        var text = $"ConnectQuick · {LinkStateInfo.Label(state)}";
+        _tray.Text = text.Length > 63 ? text[..63] : text; // NotifyIcon.Text is capped at 63 characters
+        UpdateMenu();
+    }
+
+    private void ShowQr(QrPairingPayload payload)
+    {
+        if (_pairingWindow is { IsDisposed: false })
+        {
+            _pairingWindow.Render(payload);
+            _pairingWindow.Activate();
             return;
         }
-        foreach (var device in devices)
-        {
-            var item = new ToolStripMenuItem(device.DeviceName);
-            item.DropDownItems.Add(new ToolStripMenuItem("Revocar acceso", null, async (_, _) => await _coordinator.RevokeAsync(device.DeviceId)));
-            devicesItem.DropDownItems.Add(item);
-        }
+        _pairingWindow = new PairingWindow(payload);
+        _pairingWindow.RenewRequested += StartPairing;
+        _pairingWindow.FormClosed += (_, _) => _pairingWindow = null;
+        _pairingWindow.Show();
     }
 
-    private async void OnLinkNewDevice()
+    private async void AskToAuthorize(IncomingPairingRequest request)
     {
+        using var dialog = new AuthorizeForm(request);
+        dialog.ShowDialog();
         try
         {
-            await _coordinator.StartNewPairingAsync();
-        }
-        catch (InvalidOperationException)
-        {
-            _trayIcon.ShowBalloonTip(4000, "ConnectQuick", "No hay conexión con el servidor todavía. Inténtalo de nuevo en unos segundos.", ToolTipIcon.Warning);
-        }
-    }
-
-    private void OnConnectionChanged(bool connected)
-    {
-        _uiSync.BeginInvoke((MethodInvoker)(() =>
-        {
-            _trayIcon.Text = connected
-                ? $"ConnectQuick — {_config.HostName} (conectado)"
-                : $"ConnectQuick — {_config.HostName} (reconectando...)";
-        }));
-    }
-
-    private void OnPairingQrReady(QrPairingPayload payload)
-    {
-        _uiSync.BeginInvoke((MethodInvoker)(() =>
-        {
-            if (_pairingWindow is { IsDisposed: false })
-            {
-                _pairingWindow.Render(payload);
-                _pairingWindow.Activate();
-                return;
-            }
-            _pairingWindow = new PairingWindow(payload);
-            _pairingWindow.FormClosed += (_, _) => _pairingWindow = null;
-            _pairingWindow.Show();
-        }));
-    }
-
-    private void OnIncomingRequest(IncomingPairingRequest request)
-    {
-        _uiSync.BeginInvoke((MethodInvoker)(async () =>
-        {
-            using var dialog = new AuthorizeForm(request);
-            dialog.ShowDialog();
             if (dialog.Approved)
             {
-                await _coordinator.ApproveAsync(request);
-                _trayIcon.ShowBalloonTip(4000, "ConnectQuick", $"\"{request.DeviceName}\" ha sido autorizado.", ToolTipIcon.Info);
+                await _rt.Pairing.ApproveAsync(request, dialog.SelectedPermissions);
+                _pairingWindow?.Close();
+                Notify("Dispositivo autorizado", $"«{request.DeviceName}» ya puede conectarse.", ToolTipIcon.Info);
             }
             else
             {
-                await _coordinator.RejectAsync(request);
+                await _rt.Pairing.RejectAsync(request);
             }
-        }));
+        }
+        catch (InvalidOperationException)
+        {
+            Notify("ConnectQuick", "Se perdió la conexión con el servidor antes de terminar. Vuelve a vincular.", ToolTipIcon.Warning);
+        }
     }
 
-    private void OnErrorReceived(string code, string message)
+    private void Notify(string title, string text, ToolTipIcon icon)
     {
-        _uiSync.BeginInvoke((MethodInvoker)(() =>
-            _trayIcon.ShowBalloonTip(4000, "ConnectQuick", $"{code}: {message}", ToolTipIcon.Error)));
+        if (_tray.Visible) _tray.ShowBalloonTip(5000, title, text, icon);
+    }
+
+    private void OnUi(Action action)
+    {
+        if (!_ui.IsHandleCreated || _ui.IsDisposed) return;
+        try { _ui.BeginInvoke(action); }
+        catch (InvalidOperationException) { /* shutting down */ }
+    }
+
+    private static string FriendlyReason(string reason) => reason switch
+    {
+        "ended_by_user" => "cortada desde este PC",
+        "revoked" => "acceso revocado",
+        "signaling_lost" => "se perdió la conexión con el servidor",
+        "idle_timeout" => "sin actividad",
+        "network_lost" => "red perdida",
+        "host_shutdown" => "ConnectQuick se cerró",
+        "protocol_violations" => "mensajes no válidos",
+        "replaced" => "otra sesión la sustituyó",
+        _ => "finalizada",
+    };
+
+    private static string FriendlyError(string code, string message) => code switch
+    {
+        "rate_limited" => "Demasiados intentos seguidos. Espera un momento.",
+        "unauthorized" => "El servidor no reconoce este PC. Reinicia ConnectQuick.",
+        _ => string.IsNullOrWhiteSpace(message) ? code : message,
+    };
+
+    public void Quit()
+    {
+        _main.QuitRequested = true;
+        ExitThread();
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            _trayIcon.Visible = false;
-            _trayIcon.Dispose();
-            _uiSync.Dispose();
+            _tray.Visible = false;
+            _tray.Dispose();
+            _pairingWindow?.Dispose();
+            _main.Dispose();
+            _ui.Dispose();
         }
         base.Dispose(disposing);
     }

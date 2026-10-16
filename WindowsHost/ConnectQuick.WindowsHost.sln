@@ -9,6 +9,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectQuick.WindowsHost", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectQuick.WindowsHost.Tests", "src\ConnectQuick.WindowsHost.Tests\ConnectQuick.WindowsHost.Tests.csproj", "{F6C3A141-4719-4DA4-948F-081A55BC8AD2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectQuick.WindowsHost.Core", "src\ConnectQuick.WindowsHost.Core\ConnectQuick.WindowsHost.Core.csproj", "{E6569F27-DA2E-4FBB-B794-718143548FE5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectQuick.WindowsHost.Testing", "src\ConnectQuick.WindowsHost.Testing\ConnectQuick.WindowsHost.Testing.csproj", "{1DFCFF34-80BF-4C9F-A406-0265B9014763}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConnectQuick.WindowsHost.HostHarness", "src\ConnectQuick.WindowsHost.HostHarness\ConnectQuick.WindowsHost.HostHarness.csproj", "{C698181B-3F49-42F6-9AE9-77CE441EE572}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +32,24 @@ Global
 		{F6C3A141-4719-4DA4-948F-081A55BC8AD2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F6C3A141-4719-4DA4-948F-081A55BC8AD2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F6C3A141-4719-4DA4-948F-081A55BC8AD2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E6569F27-DA2E-4FBB-B794-718143548FE5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E6569F27-DA2E-4FBB-B794-718143548FE5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E6569F27-DA2E-4FBB-B794-718143548FE5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E6569F27-DA2E-4FBB-B794-718143548FE5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1DFCFF34-80BF-4C9F-A406-0265B9014763}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1DFCFF34-80BF-4C9F-A406-0265B9014763}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1DFCFF34-80BF-4C9F-A406-0265B9014763}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1DFCFF34-80BF-4C9F-A406-0265B9014763}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C698181B-3F49-42F6-9AE9-77CE441EE572}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C698181B-3F49-42F6-9AE9-77CE441EE572}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C698181B-3F49-42F6-9AE9-77CE441EE572}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C698181B-3F49-42F6-9AE9-77CE441EE572}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{38F9CBFE-1C14-43B9-B386-45217676255B} = {9F4FF1CE-1C4C-4E70-968F-989E13B016BA}
 		{F6C3A141-4719-4DA4-948F-081A55BC8AD2} = {9F4FF1CE-1C4C-4E70-968F-989E13B016BA}
+		{E6569F27-DA2E-4FBB-B794-718143548FE5} = {9F4FF1CE-1C4C-4E70-968F-989E13B016BA}
+		{1DFCFF34-80BF-4C9F-A406-0265B9014763} = {9F4FF1CE-1C4C-4E70-968F-989E13B016BA}
+		{C698181B-3F49-42F6-9AE9-77CE441EE572} = {9F4FF1CE-1C4C-4E70-968F-989E13B016BA}
 	EndGlobalSection
 EndGlobal

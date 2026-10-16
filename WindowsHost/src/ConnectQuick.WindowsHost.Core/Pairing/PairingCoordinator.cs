@@ -14,7 +14,7 @@ public sealed record IncomingPairingRequest(string PairingId, string DeviceId, s
 /// `pairing.created` → QR, and `pairing.incoming` → user decision → signed `pairing.decision`.
 /// UI code (tray/forms) only ever sees the events below — it never touches the wire format.
 /// </summary>
-public sealed class PairingCoordinator
+public sealed class PairingCoordinator : IHelloAuthenticator
 {
     private readonly BackendClient _client;
     private readonly DeviceIdentity _identity;
@@ -36,7 +36,7 @@ public sealed class PairingCoordinator
         _deviceStore = deviceStore;
 
         _client.ConnectionChanged += connected => ConnectionChanged?.Invoke(connected);
-        _client.On("hello.challenge", OnHelloChallenge);
+        _client.Authenticator = this;
         _client.On("pairing.created", OnPairingCreated);
         _client.On("pairing.incoming", OnPairingIncoming);
         _client.On("error", OnError);
@@ -49,13 +49,11 @@ public sealed class PairingCoordinator
         ErrorReceived?.Invoke(code, message);
     }
 
-    private async void OnHelloChallenge(JsonElement payload)
+    /// <summary>Answers hello.challenge by signing it with the device identity (proves key possession, never sends the key).</summary>
+    public Dictionary<string, object?> BuildHello(string serverChallengeB64Url)
     {
-        var challengeB64 = payload.GetProperty("serverChallenge").GetString()!;
-        var challengeBytes = CryptoUtil.FromBase64Url(challengeB64);
-        var signature = _identity.Sign(challengeBytes);
-
-        await _client.SendAsync("hello", new Dictionary<string, object?>
+        var signature = _identity.Sign(CryptoUtil.FromBase64Url(serverChallengeB64Url));
+        return new Dictionary<string, object?>
         {
             ["role"] = "host",
             ["deviceId"] = _identity.DeviceId,
@@ -63,7 +61,7 @@ public sealed class PairingCoordinator
             ["challengeSig"] = signature,
             ["clientVersion"] = HostConfig.ClientVersion,
             ["hostName"] = _config.HostName,
-        }).ConfigureAwait(false);
+        };
     }
 
     /// <summary>"Vincular nuevo dispositivo" — asks the backend for a fresh pairingId and builds the QR content once it answers.</summary>
@@ -112,15 +110,21 @@ public sealed class PairingCoordinator
         IncomingRequest?.Invoke(request);
     }
 
-    /// <summary>User clicked "Sí" on the authorize dialog. Grants the default permission set (Protocol §4).</summary>
-    public Task ApproveAsync(IncomingPairingRequest request) => SendDecisionAsync(request, approved: true);
+    /// <summary>
+    /// User clicked "Sí" on the authorize dialog. <paramref name="permissions"/> is what the user ticked;
+    /// when omitted the conservative <see cref="PairingPermissions.Recommended"/> set is granted (no
+    /// remote power control, no unimplemented "apps"), never the protocol's grant-everything default.
+    /// </summary>
+    public Task ApproveAsync(IncomingPairingRequest request, IReadOnlyList<string>? permissions = null) =>
+        SendDecisionAsync(request, approved: true, permissions ?? PairingPermissions.Recommended);
 
     /// <summary>User clicked "No" / dismissed the dialog.</summary>
-    public Task RejectAsync(IncomingPairingRequest request) => SendDecisionAsync(request, approved: false);
+    public Task RejectAsync(IncomingPairingRequest request) => SendDecisionAsync(request, approved: false, []);
 
-    private async Task SendDecisionAsync(IncomingPairingRequest request, bool approved)
+    private async Task SendDecisionAsync(IncomingPairingRequest request, bool approved, IReadOnlyList<string> permissions)
     {
-        var permissions = approved ? PairingPermissions.Default : [];
+        // Canonical order (the list is part of the signed message and the backend rebuilds it verbatim).
+        permissions = approved ? PairingPermissions.Canonical(permissions) : [];
         var message = CryptoUtil.PairingDecisionMessage(request.PairingId, request.DeviceId, approved, permissions);
         var signature = _identity.Sign(message);
 
@@ -152,4 +156,19 @@ public static class PairingPermissions
     /// <summary>Must match <c>Backend/src/ws/handlers/util.ts#DEFAULT_PAIRING_PERMISSIONS</c> exactly (order included — it's part of the signed message).</summary>
     public static readonly IReadOnlyList<string> Default =
         ["remote_desktop", "mouse", "keyboard", "clipboard", "files", "media", "apps", "power"];
+
+    /// <summary>What the authorize dialog pre-ticks: everything implemented except remote power control.</summary>
+    public static readonly IReadOnlyList<string> Recommended =
+        ["remote_desktop", "mouse", "keyboard", "clipboard", "files", "media"];
+
+    /// <summary>Permissions that map to a real feature and can therefore be offered to the user.</summary>
+    public static readonly IReadOnlyList<string> Offerable =
+        ["remote_desktop", "mouse", "keyboard", "clipboard", "files", "media", "power"];
+
+    /// <summary>De-duplicated, in protocol order, dropping anything unknown (e.g. "apps": no implementation behind it).</summary>
+    public static IReadOnlyList<string> Canonical(IEnumerable<string> requested)
+    {
+        var set = requested.ToHashSet();
+        return Offerable.Where(set.Contains).ToList();
+    }
 }

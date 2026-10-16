@@ -5,7 +5,7 @@ namespace ConnectQuick.WindowsHost.Identity;
 
 /// <summary>
 /// The Host's long-term Ed25519 identity: generated once on first run, then loaded from
-/// <see cref="SecureKeyStore"/> on every subsequent start. <see cref="DeviceId"/> is a
+/// an <see cref="ISeedStore"/> (DPAPI-backed on Windows) on every subsequent start. <see cref="DeviceId"/> is a
 /// self-certifying commitment to <see cref="IdentityPub"/> (Protocol §3) — nobody, including the
 /// backend, can claim it without this private key.
 /// </summary>
@@ -22,7 +22,7 @@ public sealed class DeviceIdentity
         DeviceId = CryptoUtil.DeriveDeviceId(IdentityPub);
     }
 
-    public static DeviceIdentity LoadOrCreate(SecureKeyStore store)
+    public static DeviceIdentity LoadOrCreate(ISeedStore store)
     {
         var seed = store.TryLoadSeed();
         Key key;

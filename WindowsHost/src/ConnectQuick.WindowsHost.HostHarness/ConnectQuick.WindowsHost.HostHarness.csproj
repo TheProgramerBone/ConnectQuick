@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Headless Host for cross-platform integration tests. It runs the SAME HostRuntime the Windows app
+    runs (pairing, sessions, input, clipboard, media, files, power) but with in-memory OS adapters, so
+    a real Android controller can drive it against a real backend on any machine. Controlled through
+    JSON lines on stdin/stdout. Not shipped to users.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ConnectQuick.WindowsHost.Core\ConnectQuick.WindowsHost.Core.csproj" />
+    <ProjectReference Include="..\ConnectQuick.WindowsHost.Testing\ConnectQuick.WindowsHost.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

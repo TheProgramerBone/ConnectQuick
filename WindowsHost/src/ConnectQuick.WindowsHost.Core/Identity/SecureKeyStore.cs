@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 
 namespace ConnectQuick.WindowsHost.Identity;
@@ -8,7 +9,8 @@ namespace ConnectQuick.WindowsHost.Identity;
 /// disco con DPAPI"). Only the current Windows user account (and only on this machine) can
 /// decrypt the file — it is meaningless if copied elsewhere.
 /// </summary>
-public sealed class SecureKeyStore
+[SupportedOSPlatform("windows")]
+public sealed class SecureKeyStore : ISeedStore
 {
     private readonly string _filePath;
 

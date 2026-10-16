@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    WebRTC video for the Host: screen capture -> VP8 encode -> RTP via SIPSorcery. Kept apart from Core
+    so the protocol/session layer does not depend on a media stack. Builds on any OS (capture calls
+    are guarded Win32 P/Invoke); the loopback test exercises the real encoder, ICE and RTP on Linux.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SIPSorcery" Version="10.0.17" />
+    <PackageReference Include="SIPSorceryMedia.Encoders" Version="10.0.4" />
+    <!-- SIPSorcery's netstandard dependency chain pulls these two at 4.3.0, which carry known high-severity
+         advisories (GHSA-7jgj-8wvc-jh57, GHSA-cmhx-cq75-c4mj). Pinning the patched releases fixes the resolved version. -->
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ConnectQuick.WindowsHost.Core\ConnectQuick.WindowsHost.Core.csproj" />
+  </ItemGroup>
+
+</Project>

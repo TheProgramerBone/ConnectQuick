@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- In-memory stand-ins for the operating-system adapters. Used by the unit tests and by the headless
+       integration harness; nothing in the shipped Windows app references this project. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ConnectQuick.WindowsHost.Core\ConnectQuick.WindowsHost.Core.csproj" />
+  </ItemGroup>
+
+</Project>

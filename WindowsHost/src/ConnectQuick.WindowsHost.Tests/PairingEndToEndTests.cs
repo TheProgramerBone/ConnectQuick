@@ -55,6 +55,10 @@ public sealed class PairingEndToEndTests : IAsyncLifetime
         _backend?.Dispose();
     }
 
+    /// <summary>DPAPI-backed store on Windows (the production one); an in-memory store elsewhere, where DPAPI does not exist.</summary>
+    private ISeedStore NewSeedStore() =>
+        OperatingSystem.IsWindows() ? new SecureKeyStore(TempFilePath("host_identity.bin")) : new InMemorySeedStore();
+
     [Fact]
     public async Task Host_pairing_flow_completes_against_the_real_backend()
     {
@@ -63,7 +67,7 @@ public sealed class PairingEndToEndTests : IAsyncLifetime
 
         // --- Host side: the real production code this app ships. ---
         var hostConfig = new HostConfig(relay, "E2E Test PC");
-        var hostIdentity = DeviceIdentity.LoadOrCreate(new SecureKeyStore(TempFilePath("host_identity.bin")));
+        var hostIdentity = DeviceIdentity.LoadOrCreate(NewSeedStore());
         var hostClient = new BackendClient(relay);
         var coordinator = new PairingCoordinator(hostClient, hostIdentity, hostConfig, new AuthorizedDeviceStore(TempFilePath("host_devices.json")));
 
@@ -73,7 +77,9 @@ public sealed class PairingEndToEndTests : IAsyncLifetime
         coordinator.IncomingRequest += async request => await coordinator.ApproveAsync(request);
 
         var hostRunTask = hostClient.RunForeverAsync(lifetimeCts.Token);
-        await Task.Delay(300); // let the WS connect + hello/hello.ack complete before asking for a pairing
+        // Wait for the link to be genuinely ready (connected + hello/hello.ack) rather than guessing a delay.
+        for (var waited = 0; hostClient.State != SignalingState.Ready && waited < 10_000; waited += 20) await Task.Delay(20);
+        Assert.Equal(SignalingState.Ready, hostClient.State);
 
         await coordinator.StartNewPairingAsync();
         var qr = await WithTimeout(qrReady.Task, TimeSpan.FromSeconds(5));
@@ -123,11 +129,12 @@ public sealed class PairingEndToEndTests : IAsyncLifetime
         Assert.Equal(hostIdentity.DeviceId, result.GetProperty("hostId").GetString());
         Assert.Equal(hostConfig.HostName, result.GetProperty("hostName").GetString());
         var permissions = result.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).ToArray();
-        Assert.Equal(PairingPermissions.Default, permissions);
+        // Secure default: approving without ticking anything grants the recommended set, NOT remote power control.
+        Assert.Equal(PairingPermissions.Recommended, permissions);
 
         // The result carries the Host's signature over the decision — a real Controller must be
         // able to verify it independently (it's not just trusting the backend's word).
-        var message = CryptoUtil.PairingDecisionMessage(qr.PairingId, controllerDeviceId, approved: true, PairingPermissions.Default);
+        var message = CryptoUtil.PairingDecisionMessage(qr.PairingId, controllerDeviceId, approved: true, PairingPermissions.Recommended);
         Assert.True(CryptoUtil.VerifyEd25519(result.GetProperty("hostPub").GetString()!, message, result.GetProperty("hostSignature").GetString()!));
 
         lifetimeCts.Cancel();
