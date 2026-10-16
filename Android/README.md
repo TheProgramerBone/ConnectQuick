@@ -1,97 +1,67 @@
 # ConnectQuick Android Controller
 
-Minimal Android app: scans the WindowsHost's pairing QR and speaks the real wire protocol
-(`Protocol/protocol-spec.md`) to the Backend. This is the Phase 2 client-side slice described in
-`Docs/STATUS.md` — **pairing only**. There is no remote-desktop view, touchpad/keyboard input,
-clipboard, file transfer, or media/power control here yet (Phases 4-9, still not started).
+The phone side of ConnectQuick: pair with a Windows PC by QR, then control it — touchpad, keyboard,
+live screen, clipboard, media keys, files, and (explicitly confirmed) power — over an end-to-end
+encrypted session. Everything the app shows is backed by a working function; anything the PC did not grant is
+shown as unavailable *with the reason*.
 
-## What's implemented
+> **Verification status — read this first.** The protocol, crypto, connection manager, feature clients, gesture engine and all
+> user-facing wording live in `controller-core` and are unit-tested (89 JVM tests) and exercised against a real backend and a
+> real .NET Host process (`Tests/`). The Android **app** layer (Views, Keystore identity, camera scan, libwebrtc rendering,
+> MediaStore adapters) is compiled against the Android 14 framework API and the libwebrtc API, **but has never been installed or run on
+> a device or emulator**, and in the development sandbox Gradle could not resolve its plugins, so `./gradlew assembleDebug` was
+> **not** run in this session (the CameraX/ML Kit `ScanActivity` could not even be compile-checked). Treat the first real build and run as
+> the first integration of that layer. See `Docs/STATUS.md`.
 
-- Ed25519 device identity, generated on first run and persisted encrypted with an AES-256-GCM key
-  held in the Android Keystore (StrongBox-backed when available, else TEE-backed), matching
-  `Protocol/protocol-spec.md` §3.
-- Transport authentication: `hello.challenge` → sign with the identity key → `hello` → `hello.ack`.
-- Reconnect loop with exponential backoff + jitter (capped at 30s, per §6) and a 15s
-  `heartbeat.ping` — same shape as `WindowsHost/.../Net/BackendClient.cs`.
-- QR scan (CameraX + on-device ML Kit barcode scanning) → `pairing.init` → `pairing.result`, with
-  the Host's signature over the decision **verified independently** before reporting success —
-  never just trusting the backend's word (`Docs/SECURITY.md`).
-- All crypto (`crypto/CryptoUtil.kt`) is unit-tested bit-for-bit against
-  `Protocol/test-vectors/crypto-vectors.json` — the same file the Backend and WindowsHost tests use.
-- `res/xml/network_security_config.xml` permits plaintext `ws://` — the Backend itself defaults to
-  unencrypted `ws://` with an explicit "local development only" warning when no TLS cert is
-  configured (`Backend/README.md` "Production notes"); this mirrors that same stance on the
-  client rather than a stricter or looser one. Real deployments use `wss://`, which this doesn't
-  block.
-
-## Why BouncyCastle instead of lazysodium
-
-`Protocol/protocol-spec.md` §3 suggests lazysodium (a libsodium JNI binding) for Android. This app
-uses BouncyCastle instead: Ed25519/X25519 (RFC 8032/7748) are deterministic standards, so any
-correct implementation produces identical bytes for identical inputs — `CryptoVectorsTest` proves
-that bit-for-bit against the shared vectors. BouncyCastle is pure JVM bytecode, so it (and every
-class built on it — `BackendClient`, `PairingController`) runs unmodified in a plain JVM unit
-test, with no emulator or physical device required. That's what makes `PairingEndToEndTest`
-possible in an environment without an Android emulator. Swapping to lazysodium later, if a
-specific device/perf reason comes up, would not change the wire format.
-
-## Project layout
+## Layout
 
 ```
-app/src/main/kotlin/dev/connectquick/controller/
-  crypto/     Ed25519/X25519 wire-format primitives (BouncyCastle-backed)
-  identity/   DeviceIdentity interface + Android-Keystore-backed and in-memory implementations
-  net/        WebSocket client (envelope framing, reconnect, heartbeat) — role-agnostic
-  pairing/    protocol orchestration (PairingController) + QR payload model
-  ui/         MainActivity (scan button + status) + ScanActivity (CameraX/ML Kit)
-app/src/test/kotlin/dev/connectquick/controller/
-  CryptoVectorsTest.kt      crypto vectors, bit-for-bit
-  PairingEndToEndTest.kt    real pairing handshake against a spawned real Backend
+controller-core/   pure JVM Kotlin (builds and tests on any machine with a JDK; included in the app via a Gradle composite build)
+  crypto/ identity/ net/ pairing/   Ed25519/X25519 (BouncyCastle), device identity, WebSocket client, QR pairing + SAS
+  protocol/                         inner-message validation against Protocol/schemas/session-messages.schema.json
+  session/                          SessionCrypto, ControllerSession (E2E handshake), RemoteLink (auto-reconnect state machine),
+                                    ControllerHub (feature clients per session), LinkTexts (state wording)
+  input/ clipboard/ media/ power/ files/ stream/   feature clients, TouchpadEngine, StreamController (+ RtcEngine abstraction)
+app/               Android UI and the platform adapters
+  ConnectQuickApp           holds the one ControllerHub; link runs while the app is visible (+60 s grace); network-change callback
+  ui/Design.kt              "Liquid Crystal" design system built from framework drawables (no assets, no extra libraries)
+  ui/MainActivity           real link state + a tile per capability that says why it is unavailable
+  ui/PairActivity           scan → comparison code → authorized
+  ui/Touchpad|Screen|Clipboard|Media|Files|PowerActivity
+  stream/WebRtcEngine       libwebrtc (receive-only) behind the RtcEngine contract
+  files/AndroidFiles        picker source; Downloads/ConnectQuick sink via MediaStore (API 29+) or app folder (older)
+  identity/KeystoreDeviceIdentity   Ed25519 seed wrapped by an AES-256-GCM Android Keystore key (StrongBox if present)
 ```
 
-## Building
+## Build and test
 
-Requires JDK 17 and the Android SDK (`compileSdk`/`targetSdk` 34, `build-tools;34.0.0`,
-`platforms;android-34` — set `sdk.dir` in `local.properties`, gitignored, or export
-`ANDROID_HOME`/`ANDROID_SDK_ROOT`).
+Requires JDK 17 and the Android SDK (`compileSdk`/`targetSdk` 34; set `sdk.dir` in `local.properties` or `ANDROID_HOME`).
 
 ```sh
 cd Android
-./gradlew assembleDebug
-# -> app/build/outputs/apk/debug/app-debug.apk
+./gradlew -p controller-core test     # 89 JVM tests: vectors, handshake, gestures, clients, wording, spawns the real Backend
+./gradlew assembleDebug               # -> app/build/outputs/apk/debug/app-debug.apk (arm64-v8a)
+adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-The debug build is restricted to `arm64-v8a` (`defaultConfig.ndk.abiFilters` in
-`app/build.gradle.kts`) to keep the sideloadable APK small — covers the large majority of real
-Android phones. A release build would need to either drop that filter (universal APK, larger) or
-ship an Android App Bundle / per-ABI split APKs instead.
+- **Debug builds** may use plain `ws://` (local development). **Release builds only allow `wss://`**
+  (`app/src/debug/res/xml/network_security_config.xml` overrides the stricter default in `src/main`).
+- Dependencies are the minimum for what the app does: CameraX + ML Kit (QR scan), `kotlinx-coroutines-android`,
+  `io.getstream:stream-webrtc-android` (the `org.webrtc` API for the live screen) and AndroidX appcompat/material only because the scan screen needs them.
+  All other screens use framework views.
+- The app is Spanish-only for now; user-facing strings are in code (`LinkTexts`, `StreamTexts`, activities), not `strings.xml`.
 
-To install on a connected device/emulator: `adb install app/build/outputs/apk/debug/app-debug.apk`,
-or sideload the APK file directly and allow "install from unknown sources".
+## Using it
 
-## Testing
+1. On the PC: ConnectQuick → *Vincular un teléfono* (shows a QR).
+2. Phone: *Vincular un PC* → scan → compare the 6-digit code with the PC → *Sí, autorizar* on the PC.
+3. Home shows **Conectado a «PC»** only when a verified encrypted session exists. If the PC is off it says so and connects by itself when it appears;
+   if the network changes it reconnects; if the PC revoked the phone it says *Acceso revocado* and offers to pair again.
+4. The live screen needs, on a different network from the PC's, a TURN server on the backend (`Docs/ARCHITECTURE.md`, *Running TURN*); on the same Wi-Fi it works without one.
 
-```sh
-cd Android
-./gradlew testDebugUnitTest
-```
+## Limits worth knowing
 
-Runs entirely on the JVM — no emulator/device needed:
-
-- `CryptoVectorsTest`: Kotlin crypto matches `Protocol/test-vectors/crypto-vectors.json`
-  bit-for-bit.
-- `PairingEndToEndTest`: spawns the real `Backend/src/server.ts` as a subprocess (ephemeral port,
-  in-memory DB) and drives the actual `PairingController` production code against it, with the
-  Host side simulated using the same vector-verified crypto primitives (the WindowsHost app isn't
-  spawnable headlessly in this setup). Nothing here is mocked at the protocol or network layer,
-  consistent with how `Backend/test-support` and `WindowsHost/.../PairingEndToEndTests.cs` test
-  the other two platforms.
-
-## What's deliberately not here yet
-
-A real device/emulator run of the app was not exercised in this environment (no Android
-emulator installed) — verification stops at "the real production pairing code passes a real
-handshake against the real backend on the JVM" plus "the APK builds and its manifest/permissions
-are correct" (checked with `aapt dump badging`). Session UI, desktop streaming, input injection,
-clipboard, files, media, power actions, and a signed release build remain future phases — see
-`Docs/STATUS.md`.
+- Only the PC's primary monitor; no audio. A UAC prompt / lock screen is reported as such (Windows does not allow capturing it).
+- The connection lives while the app is on screen (+60 s). There is no background service by design.
+- Files from the PC land in *Downloads/ConnectQuick* (Android 10+) or the app's own Downloads folder (older). Interrupted receives resume only on Android 9 and below.
+- No app lock/biometric gate yet.

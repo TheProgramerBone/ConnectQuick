@@ -18,6 +18,7 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import dev.connectquick.controller.R
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -41,7 +42,23 @@ class ScanActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         previewView = PreviewView(this)
-        setContentView(previewView)
+        val root = android.widget.FrameLayout(this)
+        root.addView(previewView, android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT))
+        val hint = android.widget.TextView(this).apply {
+            text = getString(R.string.scan_hint)
+            setTextColor(Ui.TEXT)
+            textSize = 17f
+            gravity = android.view.Gravity.CENTER
+            setBackgroundColor(0xB3090D1B.toInt())
+            val p = Ui.dp(this@ScanActivity, 16)
+            setPadding(p, p, p, p)
+        }
+        root.addView(hint, android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.TOP))
+        val cancel = Ui.button(this, getString(R.string.scan_cancel)) { finish() }
+        root.addView(cancel, android.widget.FrameLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM).apply {
+            val m = Ui.dp(this@ScanActivity, 20); setMargins(m, m, m, m)
+        })
+        setContentView(root)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {

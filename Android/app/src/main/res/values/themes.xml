@@ -1,6 +1,16 @@
 <resources>
-    <style name="Theme.ConnectQuickController" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
-    <style name="Theme.ConnectQuickController.Scan" parent="Theme.ConnectQuickController">
+    <!-- Dark glass identity: the app draws its own backdrop, so the window theme only supplies a matching base. -->
+    <style name="Theme.ConnectQuickController" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/cq_backdrop</item>
+        <item name="android:statusBarColor">@color/cq_backdrop</item>
+        <item name="android:navigationBarColor">@color/cq_backdrop</item>
+        <item name="android:textColorPrimary">#F0F4FF</item>
+        <item name="android:textColorSecondary">#ACB8D6</item>
+        <item name="android:colorAccent">#68D0FF</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
+    </style>
+    <!-- The camera preview screen uses AppCompat/CameraX, so it keeps a Material Components parent. -->
+    <style name="Theme.ConnectQuickController.Scan" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowFullscreen">true</item>
     </style>
 </resources>

@@ -15,4 +15,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "ConnectQuickController"
+// Platform-independent protocol/crypto/session/feature logic, built and unit-tested on plain JVM.
+includeBuild("controller-core")
 include(":app")

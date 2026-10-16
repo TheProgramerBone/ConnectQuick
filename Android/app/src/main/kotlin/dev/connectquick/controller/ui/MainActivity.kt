@@ -1,99 +1,123 @@
 package dev.connectquick.controller.ui
 
 import android.content.Intent
-import android.os.Build
-import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
-import dev.connectquick.controller.R
-import dev.connectquick.controller.identity.KeystoreDeviceIdentity
-import dev.connectquick.controller.net.BackendClient
-import dev.connectquick.controller.pairing.PairingController
-import dev.connectquick.controller.pairing.PairingOutcome
-import dev.connectquick.controller.pairing.QrPairingPayload
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
+import dev.connectquick.controller.connectQuick
+import dev.connectquick.controller.session.ControllerHub
+import dev.connectquick.controller.session.LinkAction
+import dev.connectquick.controller.session.LinkState
 
-/** The only screen: "Escanear código QR" → connect to the scanned QR's relay → pair. No session/remote-control UI yet (Phases 4+, not started). */
-class MainActivity : AppCompatActivity() {
+/**
+ * Home. Without a paired PC it explains what to do; with one it shows the real link state and a tile
+ * per capability, each of which says WHY it is unavailable instead of silently graying out.
+ */
+class MainActivity : HubActivity() {
+    private data class Entry(val tile: FeatureTile, val permission: String?, val ready: String, val target: Class<*>)
 
-    private lateinit var statusText: TextView
-    private var connectionJob: Job? = null
-    private var awaitingResult = false
+    private var banner: Banner? = null
+    private val entries = mutableListOf<Entry>()
+    private var pcSummary: android.widget.TextView? = null
 
-    private val scanLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val text = result.data?.getStringExtra(ScanActivity.EXTRA_QR_TEXT)
-        if (result.resultCode == RESULT_OK && text != null) onQrScanned(text)
-    }
+    override fun buildContent(hub: ControllerHub?) {
+        entries.clear()
+        banner = null
+        pcSummary = null
+        content.addView(Ui.title(this, "ConnectQuick"), Ui.lp(this, bottom = 4))
+        content.addView(Ui.dim(this, "Controla tu PC desde el teléfono, con cifrado de extremo a extremo."), Ui.lp(this, bottom = 18))
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(64, 64, 64, 64)
-        }
-        statusText = TextView(this).apply {
-            text = getString(R.string.status_idle)
-            gravity = Gravity.CENTER
-        }
-        val scanButton = Button(this).apply {
-            text = getString(R.string.scan_button)
-            setOnClickListener { scanLauncher.launch(Intent(this@MainActivity, ScanActivity::class.java)) }
-        }
-        val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = 32
-            bottomMargin = 32
-        }
-        root.addView(statusText, lp)
-        root.addView(scanButton, lp)
-        setContentView(root)
-    }
-
-    private fun onQrScanned(text: String) {
-        val qr = try {
-            Json { ignoreUnknownKeys = true }.decodeFromString(QrPairingPayload.serializer(), text)
-        } catch (e: Exception) {
-            statusText.text = getString(R.string.status_invalid_qr)
+        if (hub == null) {
+            content.addView(
+                Ui.card(
+                    this,
+                    Ui.heading(this, "Todavía no hay ningún PC vinculado"),
+                    Ui.dim(this, "1. Abre ConnectQuick en tu PC con Windows.\n2. En el PC elige «Vincular un teléfono».\n3. Aquí pulsa el botón y escanea el código QR.").apply { setPadding(0, Ui.dp(this@MainActivity, 8), 0, Ui.dp(this@MainActivity, 14)) },
+                    Ui.button(this, "Vincular un PC", Ui.ButtonStyle.PRIMARY) { startActivity(Intent(this, PairActivity::class.java)) },
+                ),
+                Ui.lp(this, bottom = 14),
+            )
             return
         }
 
-        connectionJob?.cancel()
-        awaitingResult = true
-        statusText.text = getString(R.string.status_connecting, qr.hostName)
-
-        val identity = KeystoreDeviceIdentity.loadOrCreate(applicationContext)
-        val client = BackendClient(qr.relay)
-        val controller = PairingController(client, identity, deviceName = Build.MODEL ?: "Android")
-
-        controller.onReady = {
-            if (awaitingResult) {
-                awaitingResult = false
-                controller.submitPairing(qr)
+        val b = Banner(this) { action ->
+            when (action) {
+                LinkAction.CONNECT, LinkAction.RETRY -> hub.retryNow()
+                LinkAction.REPAIR -> startActivity(Intent(this, PairActivity::class.java))
+                LinkAction.NONE -> Unit
             }
         }
-        controller.onOutcome = { outcome -> runOnUiThread { showOutcome(outcome) } }
+        banner = b
+        content.addView(b, Ui.lp(this, bottom = 16))
 
-        connectionJob = lifecycleScope.launch { client.runForever() }
-    }
-
-    private fun showOutcome(outcome: PairingOutcome) {
-        statusText.text = when (outcome) {
-            is PairingOutcome.Success -> getString(R.string.status_success, outcome.hostName)
-            is PairingOutcome.Failure -> getString(R.string.status_failure, outcome.reason)
+        content.addView(Ui.heading(this, "Qué puedes hacer"), Ui.lp(this, bottom = 8))
+        val items = listOf(
+            Entry(FeatureTile(this, GlyphView.Glyph.TOUCHPAD, "Touchpad"), "mouse", "Mover y hacer clic", TouchpadActivity::class.java),
+            Entry(FeatureTile(this, GlyphView.Glyph.SCREEN, "Pantalla"), "remote_desktop", "Ver y controlar", ScreenActivity::class.java),
+            Entry(FeatureTile(this, GlyphView.Glyph.KEYBOARD, "Teclado"), "keyboard", "Escribir en el PC", TouchpadActivity::class.java),
+            Entry(FeatureTile(this, GlyphView.Glyph.CLIPBOARD, "Portapapeles"), "clipboard", "Copiar y pegar", ClipboardActivity::class.java),
+            Entry(FeatureTile(this, GlyphView.Glyph.MEDIA, "Multimedia"), "media", "Volumen y reproducción", MediaActivity::class.java),
+            Entry(FeatureTile(this, GlyphView.Glyph.FOLDER, "Archivos"), "files", "Enviar y recibir", FilesActivity::class.java),
+            Entry(FeatureTile(this, GlyphView.Glyph.POWER, "Energía"), "power", "Bloquear o apagar", PowerActivity::class.java),
+        )
+        entries += items
+        items.chunked(2).forEach { pair ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            pair.forEachIndexed { i, e ->
+                val keyboardTile = e.tile
+                keyboardTile.setOnClickListener {
+                    val intent = Intent(this, e.target)
+                    if (e.permission == "keyboard") intent.putExtra(TouchpadActivity.EXTRA_OPEN_KEYBOARD, true)
+                    startActivity(intent)
+                }
+                row.addView(keyboardTile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    if (i == 0) marginEnd = Ui.dp(this@MainActivity, 6) else marginStart = Ui.dp(this@MainActivity, 6)
+                })
+            }
+            if (pair.size == 1) row.addView(android.view.View(this), LinearLayout.LayoutParams(0, 1, 1f))
+            content.addView(row, Ui.lp(this, bottom = 12))
         }
+
+        val summary = Ui.dim(this, "")
+        pcSummary = summary
+        content.addView(
+            Ui.card(
+                this,
+                Ui.heading(this, hub.host.hostName),
+                summary,
+                Ui.spacer(this, 10),
+                Ui.button(this, "Vincular otro PC") { startActivity(Intent(this, PairActivity::class.java)) },
+                Ui.spacer(this, 8),
+                Ui.button(this, "Olvidar este PC", Ui.ButtonStyle.DANGER) {
+                    confirm(
+                        "Olvidar este PC",
+                        "Este teléfono dejará de recordar «${hub.host.hostName}». Para que además pierda el acceso, revoca también este teléfono desde ConnectQuick en el PC.",
+                        "Olvidar", danger = true,
+                    ) { connectQuick.forgetHost(); recreate() }
+                },
+            ),
+            Ui.lp(this, top = 6, bottom = 8),
+        )
+        content.gravity = Gravity.TOP
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        connectionJob?.cancel()
+    override fun render() {
+        val h = hub ?: return
+        val p = presentation() ?: return
+        banner?.update(p)
+        entries.forEach { e -> e.tile.update(unavailableReason(e.permission), e.ready) }
+        val granted = h.host.permissions.joinToString(" · ") { permissionName(it) }
+        pcSummary?.text = "Permisos concedidos al vincular: ${if (granted.isEmpty()) "ninguno" else granted}.\nEl PC puede limitarlos en cualquier momento."
+    }
+
+    private fun permissionName(p: String) = when (p) {
+        "remote_desktop" -> "pantalla"; "mouse" -> "ratón"; "keyboard" -> "teclado"; "clipboard" -> "portapapeles"
+        "files" -> "archivos"; "media" -> "multimedia"; "power" -> "energía"; else -> p
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Coming back to the app after a long pause: if the link gave up while away, try again right now.
+        hub?.let { if (it.state.phase == LinkState.Phase.STOPPED) it.start() }
     }
 }

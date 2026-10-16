@@ -3,6 +3,7 @@ package dev.connectquick.controller.pairing
 import dev.connectquick.controller.crypto.CryptoUtil
 import dev.connectquick.controller.identity.DeviceIdentity
 import dev.connectquick.controller.net.BackendClient
+import dev.connectquick.controller.net.HelloAuthenticator
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
@@ -31,39 +32,44 @@ class PairingController(
     private val identity: DeviceIdentity,
     private val deviceName: String,
     private val clientVersion: String = "0.1.0",
-) {
+) : HelloAuthenticator {
     /** Fires once transport authentication (`hello`/`hello.ack`) completes — safe to call [submitPairing] after this. */
     var onReady: (() -> Unit)? = null
     var onOutcome: ((PairingOutcome) -> Unit)? = null
+    /**
+     * The 6-digit comparison code the PC shows in its "Authorize?" dialog. The phone derives the same
+     * code locally from what it scanned and its own ephemeral key (the backend is not involved), so the
+     * person can check that the two screens agree and nobody sits in between.
+     */
+    var onSasReady: ((String) -> Unit)? = null
 
     private var pendingPairingId: String? = null
 
     init {
-        client.on("hello.challenge") { payload -> onHelloChallenge(payload) }
+        // A client that already has an authenticator keeps it (the app installs one for its whole lifetime).
+        if (client.authenticator == null) client.authenticator = this
         client.on("hello.ack") { onReady?.invoke() }
         client.on("pairing.result") { payload -> onPairingResult(payload) }
         client.on("error") { payload -> onError(payload) }
     }
 
-    private fun onHelloChallenge(payload: JsonObject) {
-        val challenge = CryptoUtil.fromBase64Url(payload.getValue("serverChallenge").jsonPrimitive.content)
-        val signature = identity.sign(challenge)
-        client.send(
-            "hello",
-            buildJsonObject {
-                put("role", "controller")
-                put("deviceId", identity.deviceId)
-                put("identityPub", identity.identityPub)
-                put("challengeSig", signature)
-                put("clientVersion", clientVersion)
-            },
-        )
+    /** Answers hello.challenge by signing it with the device identity (proves key possession, never sends the key). */
+    override fun buildHello(serverChallenge: String): JsonObject {
+        val signature = identity.sign(CryptoUtil.fromBase64Url(serverChallenge))
+        return buildJsonObject {
+            put("role", "controller")
+            put("deviceId", identity.deviceId)
+            put("identityPub", identity.identityPub)
+            put("challengeSig", signature)
+            put("clientVersion", clientVersion)
+        }
     }
 
     /** Sends `pairing.init` for a QR the user just scanned. Call only after [onReady] has fired. */
     fun submitPairing(qr: QrPairingPayload) {
         pendingPairingId = qr.pairingId
         val ephemeral = CryptoUtil.generateX25519KeyPair()
+        onSasReady?.invoke(CryptoUtil.computeSas(qr.hostPub, ephemeral.publicKeyB64Url, qr.nonce))
         client.send(
             "pairing.init",
             buildJsonObject {

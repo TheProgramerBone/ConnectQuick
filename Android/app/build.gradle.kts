@@ -29,6 +29,8 @@ android {
             isMinifyEnabled = false
         }
     }
+    // Release builds only talk to the relay over TLS (wss://). Plain ws:// is for local development and
+    // is allowed by the debug build only (src/debug/res/xml/network_security_config.xml).
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -44,18 +46,10 @@ android {
     }
 }
 
-// Points JVM unit tests at the repo root so they can read Protocol/test-vectors/crypto-vectors.json
-// and spawn the real Backend/src/server.ts directly — never a platform-local copy of either.
-tasks.withType<Test> {
-    systemProperty("connectquick.repoRoot", rootProject.projectDir.parentFile.absolutePath)
-    testLogging { events("passed", "skipped", "failed") }
-}
-
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.activity:activity-ktx:1.9.1")
 
     // CameraX + ML Kit on-device barcode scanning for the QR pairing flow.
@@ -66,14 +60,13 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraxVersion")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
-    // Protocol transport: WebSocket envelope framing + JSON, same shape as WindowsHost's BackendClient.
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    // Protocol, cryptography, session state machine, touchpad engine and feature clients live in the
+    // pure-JVM composite build ./controller-core (so they are unit-tested on any machine).
+    implementation("dev.connectquick:controller-core")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Ed25519/X25519 (RFC 8032/7748) — pure JVM, so the crypto+protocol layer is unit-testable
-    // without a device/emulator. See Crypto/CryptoUtil.kt for why this replaces lazysodium here.
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    // Receive-only WebRTC for the live screen view (org.webrtc API; community build of libwebrtc).
+    implementation("io.getstream:stream-webrtc-android:1.3.8")
 
     testImplementation("junit:junit:4.13.2")
 }

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Two interlocked rings: the "link" between phone and PC. Kept inside the 66dp safe zone. -->
+    <path
+        android:pathData="M46,54m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0"
+        android:strokeWidth="5"
+        android:strokeColor="#68D0FF"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M62,54m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0"
+        android:strokeWidth="5"
+        android:strokeColor="#F0F4FF"
+        android:strokeLineCap="round" />
+</vector>

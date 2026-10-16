@@ -1,9 +1,5 @@
 <resources>
     <string name="app_name">ConnectQuick</string>
-    <string name="status_idle">Escanea el código QR que muestra ConnectQuick en tu PC.</string>
-    <string name="scan_button">Escanear código QR</string>
-    <string name="status_invalid_qr">Ese código no es un QR de ConnectQuick válido. Inténtalo de nuevo.</string>
-    <string name="status_connecting">Conectando con \"%1$s\"…</string>
-    <string name="status_success">Vinculado con \"%1$s\" ✓</string>
-    <string name="status_failure">No se pudo vincular: %1$s</string>
+    <string name="scan_hint">Apunta al código QR que muestra ConnectQuick en tu PC</string>
+    <string name="scan_cancel">Cancelar</string>
 </resources>
