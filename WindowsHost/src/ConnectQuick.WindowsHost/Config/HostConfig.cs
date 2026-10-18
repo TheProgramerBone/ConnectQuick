@@ -33,7 +33,7 @@ public sealed class HostConfig
             var line = File.ReadLines(path).FirstOrDefault()?.Trim();
             return string.IsNullOrWhiteSpace(line) ? null : line;
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return null;
         }

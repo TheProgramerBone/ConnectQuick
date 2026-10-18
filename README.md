@@ -31,6 +31,7 @@ Tests/       Reserved for cross-platform integration tests once there's more tha
   the (not-yet-built) desktop stream, why no port forwarding is needed.
 - [`Docs/SECURITY.md`](Docs/SECURITY.md) — device identity, pairing, what the relay can and
   cannot see, what's hardened today versus still open.
+- [`Docs/PENDIENTES.md`](Docs/PENDIENTES.md) — open work and a plan per item (read this to resume).
 - [`Docs/STATUS.md`](Docs/STATUS.md) — what's real, what's a placeholder directory, what's next.
 - [`Docs/GUIA_DE_PRUEBAS.md`](Docs/GUIA_DE_PRUEBAS.md) — step-by-step (in Spanish) to pair a real
   Windows PC with a real Android phone over your LAN.

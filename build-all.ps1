@@ -27,6 +27,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"   # Windows PowerShell 5.1 downloads are very slow with the progress bar
 $root = $PSScriptRoot
 $dist = Join-Path $root "dist"
 $work = Join-Path $root "dist\_work"
@@ -53,8 +54,8 @@ function Winget-Install([string]$id) {
         throw "winget not found. Install 'App Installer' from the Microsoft Store (or install $id manually) and re-run."
     }
     & winget install --id $id -e --silent --accept-package-agreements --accept-source-agreements
-    # 0 = ok; -1978335189 (0x8A15002B) = already installed / no applicable upgrade.
-    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne -1978335189) { throw "winget could not install $id (exit $LASTEXITCODE)" }
+    # 0 = ok; 0x8A15002B = no applicable upgrade; 0x8A150061 = already installed.
+    if ($LASTEXITCODE -notin 0, -1978335189, -1978335135) { throw "winget could not install $id (exit $LASTEXITCODE)" }
     Refresh-Path
 }
 
@@ -65,8 +66,16 @@ if (-not (Has-Dotnet8)) { Winget-Install "Microsoft.DotNet.SDK.8" }
 if (-not (Has-Dotnet8)) { throw ".NET 8 SDK still not found after install. Open a new terminal and re-run." }
 
 Step "Checking JDK 17+"
+# Major version from the JDK's own "release" file (running java -version would trip $ErrorActionPreference on stderr).
+function Jdk-Major([string]$jdkHome) {
+    $rel = Join-Path $jdkHome "release"
+    if (-not (Test-Path $rel)) { return 0 }
+    $m = Select-String -Path $rel -Pattern 'JAVA_VERSION="(\d+)' | Select-Object -First 1
+    if ($m) { return [int]$m.Matches[0].Groups[1].Value }
+    return 0
+}
 function Find-Jdk {
-    if ($env:JAVA_HOME -and (Test-Path "$env:JAVA_HOME\bin\java.exe")) { return $env:JAVA_HOME }
+    if ($env:JAVA_HOME -and (Test-Path "$env:JAVA_HOME\bin\java.exe") -and ((Jdk-Major $env:JAVA_HOME) -in 17..21)) { return $env:JAVA_HOME }
     $hit = Get-ChildItem "$env:ProgramFiles\Eclipse Adoptium", "$env:ProgramFiles\Java", "$env:ProgramFiles\Microsoft" `
         -Directory -Filter "jdk*" -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match '^jdk-?(17|18|19|20|21)' } | Sort-Object Name -Descending | Select-Object -First 1
@@ -135,7 +144,7 @@ if ($Funnel) {
     $ts = Find-Tailscale
     if (-not $ts) { Winget-Install "Tailscale.Tailscale"; $ts = Find-Tailscale }
     if (-not $ts) { throw "Tailscale not found after install. Install it from https://tailscale.com/download and re-run." }
-    $tsStatus = (& $ts status --json) | ConvertFrom-Json
+    $tsStatus = (& $ts status --json | Out-String) | ConvertFrom-Json   # Out-String: PS 5.1 mis-parses a line array
     if ($tsStatus.BackendState -ne "Running") {
         throw "Tailscale is not signed in (state: $($tsStatus.BackendState)). Open Tailscale, sign in, then re-run. See Docs\ACCESO_REMOTO.md."
     }
@@ -203,7 +212,7 @@ cd /d "%~dp0Backend"
     $backendFiles = "Source: ""$backendDir\*""; DestDir: ""{app}\backend""; Flags: ignoreversion recursesubdirs createallsubdirs; Tasks: backend"
     $backendIcons = "Name: ""{userstartup}\ConnectQuick Servidor""; Filename: ""{app}\backend\start-backend.cmd""; WorkingDir: ""{app}\backend""; IconFilename: ""{app}\ConnectQuick.WindowsHost.exe""; Flags: runminimized; Tasks: backend"
     $backendRun = @"
-Filename: "{app}\backend\start-backend.cmd"; WorkingDir: "{app}\backend"; Flags: nowait runminimized; Tasks: backend
+Filename: "{app}\backend\start-backend.cmd"; WorkingDir: "{app}\backend"; Flags: shellexec nowait runminimized; Tasks: backend
 "@
     if ($Funnel) {
         # Funnel forwards to 127.0.0.1:8443 from the Tailscale service, so no inbound firewall rule is
