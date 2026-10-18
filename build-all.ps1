@@ -20,7 +20,8 @@
 [CmdletBinding()]
 param(
     [string]$Relay,
-    [string]$AppVersion = "0.1.0"
+    [string]$AppVersion = "0.1.0",
+    [switch]$SkipBackend
 )
 
 $ErrorActionPreference = "Stop"
@@ -136,6 +137,60 @@ $publishDir = Join-Path $work "host"
 Exec "dotnet" @("publish", "src\ConnectQuick.WindowsHost\ConnectQuick.WindowsHost.csproj",
     "-c", "Release", "-r", "win-x64", "--self-contained", "true", "-o", $publishDir, "-nologo") (Join-Path $root "WindowsHost")
 
+# ---------------------------------------------------------------- Backend (optional, LAN mode)
+# The Backend is the signaling/relay server. Bundling it lets one PC act as its own relay on the
+# local network; for use over the Internet it must be hosted on a public server instead (-SkipBackend).
+$backendDir = Join-Path $work "backend"
+$backendTasks = ""
+$backendFiles = ""
+$backendIcons = ""
+$backendRun = ""
+$backendUninstallRun = ""
+if (-not $SkipBackend) {
+    Step "Packaging Backend (portable Node + production dependencies)"
+    $nodeVersion = "22.22.0"   # >= 22.18 runs the .ts sources directly (type stripping) and has node:sqlite
+    $nodeZip = Join-Path $work "node.zip"
+    Invoke-WebRequest "https://nodejs.org/dist/v$nodeVersion/node-v$nodeVersion-win-x64.zip" -OutFile $nodeZip
+    Expand-Archive $nodeZip -DestinationPath $work
+    $nodeDir = Join-Path $work "node-v$nodeVersion-win-x64"
+
+    # Layout must stay Backend\src + Protocol\schemas: schemaValidator.ts loads ..\..\Protocol\schemas.
+    New-Item -ItemType Directory -Force "$backendDir\Backend", "$backendDir\Protocol" | Out-Null
+    Copy-Item "$root\Backend\src" "$backendDir\Backend\src" -Recurse
+    Copy-Item "$root\Backend\package.json", "$root\Backend\package-lock.json" "$backendDir\Backend"
+    Copy-Item "$root\Protocol\schemas" "$backendDir\Protocol\schemas" -Recurse
+    # Renamed so uninstall can kill exactly this process without touching other Node apps.
+    Copy-Item "$nodeDir\node.exe" "$backendDir\connectquick-server.exe"
+    # Use the portable npm so no system-wide Node install is needed on the build machine.
+    $env:Path = "$nodeDir;$env:Path"
+    Exec "$nodeDir\npm.cmd" @("ci", "--omit=dev", "--no-audit", "--no-fund") "$backendDir\Backend"
+
+    @"
+@echo off
+rem ConnectQuick local relay (LAN mode). Data lives in %APPDATA%\ConnectQuick.
+set PORT=8443
+set DB_PATH=%APPDATA%\ConnectQuick\backend.sqlite
+if not exist "%APPDATA%\ConnectQuick" mkdir "%APPDATA%\ConnectQuick"
+cd /d "%~dp0Backend"
+"%~dp0connectquick-server.exe" src\server.ts
+"@ | Set-Content -Path (Join-Path $backendDir "start-backend.cmd") -Encoding ASCII
+
+    $backendTasks = @"
+Name: "backend"; Description: "Instalar y ejecutar el servidor ConnectQuick en este PC (solo para uso en red local)"; Flags: checkedonce
+"@
+    $backendFiles = "Source: ""$backendDir\*""; DestDir: ""{app}\backend""; Flags: ignoreversion recursesubdirs createallsubdirs; Tasks: backend"
+    $backendIcons = "Name: ""{userstartup}\ConnectQuick Servidor""; Filename: ""{app}\backend\start-backend.cmd""; WorkingDir: ""{app}\backend""; IconFilename: ""{app}\ConnectQuick.WindowsHost.exe""; Flags: runminimized; Tasks: backend"
+    $backendRun = @"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""ConnectQuick Backend"" dir=in action=allow protocol=TCP localport=8443 profile=private,domain"; Flags: runhidden; Tasks: backend; Check: IsAdminInstallMode
+Filename: "{app}\backend\start-backend.cmd"; WorkingDir: "{app}\backend"; Flags: nowait runminimized; Tasks: backend
+"@
+    $backendUninstallRun = @"
+[UninstallRun]
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM connectquick-server.exe"; Flags: runhidden; RunOnceId: "KillBackend"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""ConnectQuick Backend"""; Flags: runhidden; RunOnceId: "DelFirewall"; Check: IsAdminInstallMode
+"@
+}
+
 Step "Building installer with Inno Setup"
 $iss = Join-Path $work "ConnectQuick.iss"
 @"
@@ -148,6 +203,7 @@ AppPublisher=ConnectQuick
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=$dist
@@ -163,16 +219,22 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
 Name: "autostart"; Description: "Iniciar ConnectQuick con Windows"; Flags: checkedonce
+$backendTasks
 
 [Files]
 Source: "$publishDir\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+$backendFiles
 
 [Icons]
 Name: "{group}\ConnectQuick"; Filename: "{app}\ConnectQuick.WindowsHost.exe"
 Name: "{userstartup}\ConnectQuick"; Filename: "{app}\ConnectQuick.WindowsHost.exe"; Tasks: autostart
+$backendIcons
 
 [Run]
+$backendRun
 Filename: "{app}\ConnectQuick.WindowsHost.exe"; Description: "Abrir ConnectQuick ahora"; Flags: nowait postinstall skipifsilent
+
+$backendUninstallRun
 "@ | Set-Content -Path $iss -Encoding UTF8
 # relay.txt is written into the publish dir so the Host reads it next to its exe (see HostConfig.cs).
 Set-Content -Path (Join-Path $publishDir "relay.txt") -Value $Relay -Encoding ASCII

@@ -43,8 +43,11 @@ Tests/       Reserved for cross-platform integration tests once there's more tha
 
 On a Windows PC, double-click `build-all.bat` (or run `.\build-all.ps1`). It installs any missing
 prerequisites (.NET 8 SDK, JDK 17, Inno Setup, Android SDK) and writes `dist\ConnectQuick-Setup.exe`
-and `dist\ConnectQuick.apk`. Use `-Relay wss://your-server` to bake in a different backend URL
-(default: `ws://<this PC's LAN IP>:8443`); the phone reads the relay from the pairing QR.
+and `dist\ConnectQuick.apk`. The installer also offers (checked by default) a local copy of the
+Backend — portable Node + production deps, auto-started with Windows, firewall rule added when
+installed as admin — so one PC can act as its own relay on the LAN. Use `-SkipBackend` to leave it
+out and `-Relay wss://your-server` to point the Host at a hosted backend instead (default:
+`ws://<this PC's LAN IP>:8443`); the phone reads the relay from the pairing QR.
 
 ## Quickstart (backend + both client apps — the three runnable pieces today)
 
