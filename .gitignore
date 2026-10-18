@@ -33,3 +33,6 @@ Android/.cxx/
 *.pfx
 *.p12
 !Docs/**/*.pem.example
+
+# Build output of build-all.ps1
+dist/
