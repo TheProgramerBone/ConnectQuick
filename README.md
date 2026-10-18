@@ -39,7 +39,10 @@ Tests/       Reserved for cross-platform integration tests once there's more tha
 - [`WindowsHost/README.md`](WindowsHost/README.md) — running and testing the Windows tray app.
 - [`Android/README.md`](Android/README.md) — building, testing, and installing the Android app.
 
-## One-step build (Windows installer + Android APK)
+## One-step build (Windows installer + portable ZIP + Android APK)
+
+Full walkthrough in Spanish (install, test, portable version, improvement ideas):
+[`Docs/GUIA_INSTALACION_Y_PRUEBAS.md`](Docs/GUIA_INSTALACION_Y_PRUEBAS.md).
 
 On a Windows PC, double-click `build-all.bat` (or run `.\build-all.ps1`). It installs any missing
 prerequisites (.NET 8 SDK, JDK 17, Inno Setup, Android SDK) and writes `dist\ConnectQuick-Setup.exe`

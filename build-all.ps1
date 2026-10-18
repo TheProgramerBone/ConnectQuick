@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
   Builds everything ConnectQuick ships to end users, in one run:
-    dist\ConnectQuick-Setup.exe   Windows installer for the Host (tray app)
+    dist\ConnectQuick-Setup.exe   Windows installer for the Host (tray app) [+ optional local Backend]
+    dist\ConnectQuick-Portable.zip  same thing, no installer: unzip anywhere, run Iniciar-ConnectQuick.cmd
     dist\ConnectQuick.apk         Android Controller APK (debug-signed, installable)
 
 .DESCRIPTION
@@ -290,6 +291,23 @@ $backendUninstallRun
 Set-Content -Path (Join-Path $publishDir "relay.txt") -Value $Relay -Encoding ASCII
 Exec $iscc @("/Q", $iss)
 
+# ---------------------------------------------------------------- Portable ZIP (no installer)
+# Same Host + (optional) Backend, extracted and run from any folder. Identity and databases still live
+# in %APPDATA%\ConnectQuick (DPAPI ties the identity to the Windows user anyway).
+Step "Building portable ZIP"
+$portableDir = Join-Path $work "ConnectQuick-Portable"
+New-Item -ItemType Directory -Force $portableDir | Out-Null
+Copy-Item $publishDir (Join-Path $portableDir "app") -Recurse
+$launcher = "@echo off`r`n"
+if (-not $SkipBackend) {
+    Copy-Item $backendDir (Join-Path $portableDir "servidor") -Recurse
+    $launcher += "start `"`" /min `"%~dp0servidor\start-backend.cmd`"`r`n"
+}
+$launcher += "start `"`" `"%~dp0app\ConnectQuick.WindowsHost.exe`"`r`n"
+Set-Content -Path (Join-Path $portableDir "Iniciar-ConnectQuick.cmd") -Value $launcher -Encoding ASCII
+# bsdtar ships with Windows 10+; unlike Compress-Archive it has no 2 GB limit and keeps long paths.
+Exec "tar" @("-a", "-c", "-f", (Join-Path $dist "ConnectQuick-Portable.zip"), "-C", $portableDir, ".")
+
 # ---------------------------------------------------------------- Android APK
 Step "Building Android APK (first run downloads Gradle + dependencies)"
 Exec (Join-Path $root "Android\gradlew.bat") @("assembleDebug", "--no-daemon") (Join-Path $root "Android")
@@ -301,6 +319,6 @@ Copy-Item $apk (Join-Path $dist "ConnectQuick.apk")
 Remove-Item $work -Recurse -Force
 Step "Done"
 Get-ChildItem $dist | ForEach-Object { Write-Host ("  {0}  ({1:N1} MB)" -f $_.FullName, ($_.Length / 1MB)) }
-Write-Host "`nPC:      run dist\ConnectQuick-Setup.exe"
+Write-Host "`nPC:      run dist\ConnectQuick-Setup.exe  (or unzip dist\ConnectQuick-Portable.zip and run Iniciar-ConnectQuick.cmd)"
 Write-Host "Phone:   copy dist\ConnectQuick.apk to the phone and open it (allow 'install unknown apps')"
 Write-Host "         or with USB debugging:  adb install dist\ConnectQuick.apk"
