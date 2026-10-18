@@ -21,7 +21,8 @@
 param(
     [string]$Relay,
     [string]$AppVersion = "0.1.0",
-    [switch]$SkipBackend
+    [switch]$SkipBackend,
+    [switch]$Funnel
 )
 
 $ErrorActionPreference = "Stop"
@@ -118,6 +119,27 @@ $env:ANDROID_SDK_ROOT = $sdkRoot
 Write-Host "ANDROID_HOME = $sdkRoot"
 
 # ---------------------------------------------------------------- relay
+if ($Funnel) {
+    # Tailscale Funnel publishes the local Backend at https://<this-pc>.<tailnet>.ts.net, so the relay
+    # URL is fixed and reachable from any network without installing anything on the phone.
+    if ($SkipBackend) { throw "-Funnel exposes the Backend bundled in the installer; it cannot be combined with -SkipBackend." }
+    Step "Checking Tailscale (for Funnel)"
+    function Find-Tailscale {
+        $c = Get-Command tailscale -ErrorAction SilentlyContinue
+        if ($c) { return $c.Source }
+        $p = "$env:ProgramFiles\Tailscale\tailscale.exe"
+        if (Test-Path $p) { return $p }
+        return $null
+    }
+    $ts = Find-Tailscale
+    if (-not $ts) { Winget-Install "Tailscale.Tailscale"; $ts = Find-Tailscale }
+    if (-not $ts) { throw "Tailscale not found after install. Install it from https://tailscale.com/download and re-run." }
+    $tsStatus = (& $ts status --json) | ConvertFrom-Json
+    if ($tsStatus.BackendState -ne "Running") {
+        throw "Tailscale is not signed in (state: $($tsStatus.BackendState)). Open Tailscale, sign in, then re-run. See Docs\ACCESO_REMOTO.md."
+    }
+    if (-not $Relay) { $Relay = "wss://" + $tsStatus.Self.DNSName.TrimEnd('.') }
+}
 if (-not $Relay) {
     $ip = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
         Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" } |
@@ -175,20 +197,48 @@ cd /d "%~dp0Backend"
 "%~dp0connectquick-server.exe" src\server.ts
 "@ | Set-Content -Path (Join-Path $backendDir "start-backend.cmd") -Encoding ASCII
 
-    $backendTasks = @"
-Name: "backend"; Description: "Instalar y ejecutar el servidor ConnectQuick en este PC (solo para uso en red local)"; Flags: checkedonce
-"@
+    $scope = if ($Funnel) { "accesible desde Internet con Tailscale Funnel" } else { "solo para uso en red local" }
+    $backendTasks = "Name: ""backend""; Description: ""Instalar y ejecutar el servidor ConnectQuick en este PC ($scope)""; Flags: checkedonce"
     $backendFiles = "Source: ""$backendDir\*""; DestDir: ""{app}\backend""; Flags: ignoreversion recursesubdirs createallsubdirs; Tasks: backend"
     $backendIcons = "Name: ""{userstartup}\ConnectQuick Servidor""; Filename: ""{app}\backend\start-backend.cmd""; WorkingDir: ""{app}\backend""; IconFilename: ""{app}\ConnectQuick.WindowsHost.exe""; Flags: runminimized; Tasks: backend"
     $backendRun = @"
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""ConnectQuick Backend"" dir=in action=allow protocol=TCP localport=8443 profile=private,domain"; Flags: runhidden; Tasks: backend; Check: IsAdminInstallMode
 Filename: "{app}\backend\start-backend.cmd"; WorkingDir: "{app}\backend"; Flags: nowait runminimized; Tasks: backend
 "@
-    $backendUninstallRun = @"
+    if ($Funnel) {
+        # Funnel forwards to 127.0.0.1:8443 from the Tailscale service, so no inbound firewall rule is
+        # needed (and none is added: the LAN port stays closed). The script is run visibly after install
+        # because the first `tailscale funnel` may print a link to enable Funnel in the admin console.
+        @"
+@echo off
+set "TS=%ProgramFiles%\Tailscale\tailscale.exe"
+if exist "%TS%" goto run
+echo Tailscale no esta instalado. Instalalo desde https://tailscale.com/download,
+echo inicia sesion y vuelve a ejecutar este archivo.
+pause
+exit /b 1
+:run
+"%TS%" funnel --bg 8443
+echo.
+echo Si arriba aparecio un enlace, abrelo para habilitar Funnel y vuelve a ejecutar este archivo.
+echo Estado actual:
+"%TS%" funnel status
+echo.
+pause
+"@ | Set-Content -Path (Join-Path $backendDir "activar-funnel.cmd") -Encoding ASCII
+        $backendRun += "`r`nFilename: ""{app}\backend\activar-funnel.cmd""; WorkingDir: ""{app}\backend""; Description: ""Activar acceso desde Internet (Tailscale Funnel)""; Flags: postinstall shellexec skipifsilent; Tasks: backend"
+        $backendIcons += "`r`nName: ""{group}\Activar acceso desde Internet (Funnel)""; Filename: ""{app}\backend\activar-funnel.cmd""; WorkingDir: ""{app}\backend""; Tasks: backend"
+        $backendUninstallRun = @"
+[UninstallRun]
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM connectquick-server.exe"; Flags: runhidden; RunOnceId: "KillBackend"
+"@
+    } else {
+        $backendRun = "Filename: ""{sys}\netsh.exe""; Parameters: ""advfirewall firewall add rule name=""""ConnectQuick Backend"""" dir=in action=allow protocol=TCP localport=8443 profile=private,domain""; Flags: runhidden; Tasks: backend; Check: IsAdminInstallMode`r`n" + $backendRun
+        $backendUninstallRun = @"
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM connectquick-server.exe"; Flags: runhidden; RunOnceId: "KillBackend"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""ConnectQuick Backend"""; Flags: runhidden; RunOnceId: "DelFirewall"; Check: IsAdminInstallMode
 "@
+    }
 }
 
 Step "Building installer with Inno Setup"

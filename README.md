@@ -47,7 +47,9 @@ and `dist\ConnectQuick.apk`. The installer also offers (checked by default) a lo
 Backend — portable Node + production deps, auto-started with Windows, firewall rule added when
 installed as admin — so one PC can act as its own relay on the LAN. Use `-SkipBackend` to leave it
 out and `-Relay wss://your-server` to point the Host at a hosted backend instead (default:
-`ws://<this PC's LAN IP>:8443`); the phone reads the relay from the pairing QR.
+`ws://<this PC's LAN IP>:8443`); the phone reads the relay from the pairing QR. To use it from any network without installing
+anything on the phone, run `.\build-all.ps1 -Funnel` (Tailscale Funnel on the PC) — see
+[`Docs/ACCESO_REMOTO.md`](Docs/ACCESO_REMOTO.md).
 
 ## Quickstart (backend + both client apps — the three runnable pieces today)
 
