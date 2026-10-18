@@ -37,7 +37,8 @@ sourceSets {
 dependencies {
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // `api`: BackendClient's public constructor takes an OkHttpClient, so the app module must see the type when it compiles.
+    api("com.squareup.okhttp3:okhttp:4.12.0")
     // Ed25519/X25519 (RFC 8032/7748): pure JVM, so the crypto + protocol layer is unit-testable without a device.
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 
