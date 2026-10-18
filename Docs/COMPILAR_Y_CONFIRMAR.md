@@ -30,7 +30,7 @@ Es una **carpeta**, no un único archivo: se copia entera. La primera vez, Smart
 ```
 
 Resultado: `dist\ConnectQuick-debug.apk`. Instálalo con `adb install -r dist\ConnectQuick-debug.apk` o pasa el archivo al móvil y ábrelo
-(permite "instalar apps desconocidas" para el explorador de archivos). La primera compilación descarga dependencias y tarda varios minutos.
+(permite "instalar apps desconocidas" para el explorador de archivos). La primera compilación descarga dependencias y tarda varios minutos (mensajes como «incompatible Daemons» o `checkKotlinGradlePluginConfigurationErrors` son normales). Con `-Test` hace falta además Node.js: las pruebas arrancan el servidor real (el script ejecuta `npm install` en `Backend` si falta).
 
 **Si Gradle da error, es esperable en esta primera compilación**: nunca se pudo ejecutar en el entorno de desarrollo. Copia la primera línea de `What went wrong` / `error:` y compártela.
 

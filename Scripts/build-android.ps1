@@ -23,6 +23,12 @@ if (-not (Test-Path $props)) { Set-Content $props ("sdk.dir=" + ($sdk -replace '
 Push-Location $android
 try {
     if ($Test) {
+        # Algunos tests arrancan el servidor real (Backend/src/server.ts): necesitan Node y sus dependencias.
+        if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw "Con -Test hace falta Node.js >= 22.5 (https://nodejs.org)." }
+        $backend = Join-Path $root "Backend"
+        if (-not (Test-Path (Join-Path $backend "node_modules"))) {
+            Push-Location $backend; try { npm install; if ($LASTEXITCODE -ne 0) { throw "npm install fallo" } } finally { Pop-Location }
+        }
         .\gradlew.bat -p controller-core test --console=plain
         if ($LASTEXITCODE -ne 0) { throw "Los tests del nucleo fallaron." }
     }
