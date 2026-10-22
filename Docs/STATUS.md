@@ -123,6 +123,13 @@ destructive dialogs.
 - **Android**: home with the real link state and a tile per capability that says *why* it is unavailable; pairing with
   the comparison code; touchpad + keyboard; live screen with direct touch; clipboard; media; files; power with a
   confirmation dialog; network-change handling; the link runs only while the app is visible (+60 s grace).
+- **Themes (Oct 2026)**: dark (default) and light on both platforms, switchable at runtime (Windows: Permissions &
+  settings → Apariencia, stored in `settings.json` as `theme`; Android: home → Apariencia, stored in preferences).
+  Richer glass: aurora backdrop lights, bevelled panels with sheen/shade, lit primary buttons.
+- **Pairing window fix (Oct 2026)**: when a phone scans the QR the PC window now switches to the 6-digit code and says
+  to confirm in the authorize dialog (it used to keep showing the stale single-use QR); the dialog opens on top of
+  it and is activated; rejection/connection loss end in a clear state with "new code". Written without a compiler
+  or a Windows machine: **unverified on real hardware**, and the .NET suite could not be run in that session.
 **Verified by**: wording/state logic is unit-tested (`LinkPresentationTest`, `StreamTextsTest`); both UIs compile.
 **Not verified**: appearance, layout at different DPIs/font scales, TalkBack/Narrator behaviour, performance, and every
 interaction on a real screen. Expect visual polish work once they are run.

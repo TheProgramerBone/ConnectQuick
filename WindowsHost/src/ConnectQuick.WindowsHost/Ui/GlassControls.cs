@@ -24,13 +24,20 @@ internal class GlassPanel : Panel
         using (var fill = new SolidBrush(Theme.GlassFill)) g.FillPath(fill, path);
         if (!Theme.HighContrast)
         {
-            // A faint top sheen is what makes it read as glass rather than a grey box.
-            var sheen = new Rectangle(r.X + 1, r.Y + 1, r.Width - 2, Math.Max(8, r.Height / 3));
-            using var sheenBrush = new LinearGradientBrush(sheen, Theme.GlassHighlight, Color.FromArgb(0, 255, 255, 255), LinearGradientMode.Vertical);
             var state = g.Save();
             g.SetClip(path);
-            g.FillRectangle(sheenBrush, sheen);
+            // Depth: a faint shade pooling at the bottom, and a bright sheen across the top, so the pane reads as thick crystal.
+            var shade = new Rectangle(r.X, r.Y + r.Height / 2, r.Width, r.Height - r.Height / 2);
+            using (var shadeBrush = new LinearGradientBrush(shade, Color.FromArgb(0, Theme.GlassShade), Theme.GlassShade, LinearGradientMode.Vertical))
+                g.FillRectangle(shadeBrush, shade);
+            var sheen = new Rectangle(r.X + 1, r.Y + 1, r.Width - 2, Math.Max(10, r.Height / 2));
+            using (var sheenBrush = new LinearGradientBrush(sheen, Theme.GlassHighlight, Color.FromArgb(0, 255, 255, 255), LinearGradientMode.Vertical))
+                g.FillRectangle(sheenBrush, sheen);
             g.Restore(state);
+            // Inner rim: a second hairline just inside the border gives the bevelled-glass edge.
+            using var rimPath = Theme.RoundedRect(Rectangle.Inflate(r, -2, -2), Theme.Radius - 2);
+            using var rim = new Pen(Color.FromArgb(Theme.IsLight ? 120 : 26, 255, 255, 255), 1f);
+            g.DrawPath(rim, rimPath);
         }
         using var border = new Pen(Theme.GlassBorder, 1f);
         g.DrawPath(border, path);
@@ -98,7 +105,27 @@ internal sealed class GlassButton : Button
         if (!Enabled) { fill = Color.FromArgb(Math.Min((int)fill.A, 40), fill); text = Theme.TextDim; }
 
         using var path = Theme.RoundedRect(r, 12);
-        using (var brush = new SolidBrush(fill)) g.FillPath(brush, path);
+        if (Style == GlassButtonStyle.Primary && Enabled && !Theme.HighContrast)
+        {
+            // Lit from above: lighter at the top, the accent at the bottom.
+            var top = _down ? fill : Theme.AccentFillTop;
+            using var brush = new LinearGradientBrush(r, top, fill, LinearGradientMode.Vertical);
+            g.FillPath(brush, path);
+        }
+        else
+        {
+            using var brush = new SolidBrush(fill);
+            g.FillPath(brush, path);
+        }
+        if (!Theme.HighContrast && Enabled)
+        {
+            var state = g.Save();
+            g.SetClip(path);
+            var gloss = new Rectangle(r.X, r.Y, r.Width, r.Height / 2);
+            using var glossBrush = new LinearGradientBrush(gloss, Color.FromArgb(Style == GlassButtonStyle.Secondary ? (Theme.IsLight ? 110 : 34) : 52, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), LinearGradientMode.Vertical);
+            g.FillRectangle(glossBrush, gloss);
+            g.Restore(state);
+        }
         using (var pen = new Pen(Theme.GlassBorder, 1f)) g.DrawPath(pen, path);
         TextRenderer.DrawText(g, Text, Font, r, text, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
@@ -160,7 +187,7 @@ internal sealed class ToggleSwitch : CheckBox
         }
 
         var on = Checked;
-        var trackColor = on ? (Enabled ? Theme.AccentFill : Color.FromArgb(90, Theme.AccentFill)) : Color.FromArgb(Enabled ? 90 : 40, 255, 255, 255);
+        var trackColor = on ? (Enabled ? Theme.AccentFill : Color.FromArgb(90, Theme.AccentFill)) : Color.FromArgb(Enabled ? Theme.SwitchOff.A : 40, Theme.SwitchOff);
         if (Theme.HighContrast) trackColor = on ? SystemColors.Highlight : SystemColors.Control;
         using (var path = Theme.RoundedRect(track, trackH / 2))
         {
@@ -226,8 +253,21 @@ internal sealed class ThemedLabel : Label
 {
     public enum Kind { Title, Heading, Body, Dim }
 
+    private readonly Kind _kind;
+    private Color? _override;
+
+    /// <summary>Re-reads the colour for the active theme (called when the theme changes). A colour set explicitly stays.</summary>
+    public void ApplyTheme()
+    {
+        if (_override is null) ForeColor = _kind == Kind.Dim ? Theme.TextDim : Theme.Text;
+    }
+
+    /// <summary>Use for a deliberate colour (accent code, warning): it survives theme switches only if the caller re-sets it.</summary>
+    public void SetColor(Color color) { _override = color; ForeColor = color; }
+
     public ThemedLabel(string text, Kind kind = Kind.Body)
     {
+        _kind = kind;
         SetStyle(ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
         AutoSize = false;

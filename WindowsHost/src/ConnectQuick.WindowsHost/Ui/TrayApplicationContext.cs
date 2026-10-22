@@ -57,6 +57,8 @@ internal sealed class TrayApplicationContext : ApplicationContext, IShellActions
         _rt = rt;
         _approver = approver;
 
+        Theme.Apply(rt.Settings.Current.Theme); // before any window exists, so nothing flashes in the wrong mode
+
         _ui = new Control();
         _ui.CreateControl();
         _approver.Attach(_ui);
@@ -74,7 +76,7 @@ internal sealed class TrayApplicationContext : ApplicationContext, IShellActions
         _rt.Pairing.ErrorReceived += (code, message) => OnUi(() => Notify("ConnectQuick", FriendlyError(code, message), ToolTipIcon.Warning));
         _rt.Sessions.SessionStarted += s => OnUi(() => { UpdateTray(); Notify("Teléfono conectado", $"«{s.DeviceName}» está controlando este PC.", ToolTipIcon.Info); });
         _rt.Sessions.SessionEnded += (s, reason) => OnUi(() => { UpdateTray(); Notify("Sesión terminada", $"«{s.DeviceName}» se desconectó ({FriendlyReason(reason)}).", ToolTipIcon.Info); });
-        _rt.Settings.Changed += _ => OnUi(UpdateTray);
+        _rt.Settings.Changed += s => OnUi(() => { Theme.Apply(s.Theme); UpdateTray(); });
         _rt.Client.Replaced += () => OnUi(() => Notify("ConnectQuick", "Otra copia de ConnectQuick con la misma identidad se conectó al servidor; esta se detuvo.", ToolTipIcon.Warning));
         _rt.Log.Added += entry =>
         {
@@ -178,10 +180,16 @@ internal sealed class TrayApplicationContext : ApplicationContext, IShellActions
 
     private async void AskToAuthorize(IncomingPairingRequest request)
     {
-        using var dialog = new AuthorizeForm(request);
-        dialog.ShowDialog();
         try
         {
+            // The QR is single-use: show the 6-digit code in its window right away, then ask for consent on top of it.
+            var owner = _pairingWindow is { IsDisposed: false } w ? w : null;
+            owner?.ShowIncoming(request.DeviceName, request.SasCode);
+            Notify("Solicitud de vinculación", $"«{request.DeviceName}» quiere vincularse. Compara el código {request.SasCode}.", ToolTipIcon.Info);
+
+            using var dialog = new AuthorizeForm(request);
+            dialog.ShowDialog(owner);
+
             if (dialog.Approved)
             {
                 await _rt.Pairing.ApproveAsync(request, dialog.SelectedPermissions);
@@ -191,11 +199,18 @@ internal sealed class TrayApplicationContext : ApplicationContext, IShellActions
             else
             {
                 await _rt.Pairing.RejectAsync(request);
+                if (_pairingWindow is { IsDisposed: false } rejected) rejected.ShowOutcome("Vinculación rechazada. Puedes generar un código nuevo.", offerNewCode: true);
             }
         }
         catch (InvalidOperationException)
         {
+            if (_pairingWindow is { IsDisposed: false } lost) lost.ShowOutcome("Se perdió la conexión con el servidor antes de terminar.", offerNewCode: true);
             Notify("ConnectQuick", "Se perdió la conexión con el servidor antes de terminar. Vuelve a vincular.", ToolTipIcon.Warning);
+        }
+        catch (Exception ex)
+        {
+            _rt.Log.Warn("pairing", $"authorize dialog failed: {ex.GetType().Name}: {ex.Message}");
+            Notify("ConnectQuick", "No se pudo completar la vinculación. Inténtalo de nuevo.", ToolTipIcon.Warning);
         }
     }
 

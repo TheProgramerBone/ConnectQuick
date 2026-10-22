@@ -224,7 +224,7 @@ internal sealed class SettingsPage : Page
     private readonly HostRuntime _rt;
     private readonly IShellActions _shell;
     private readonly Dictionary<ToggleSwitch, Func<HostSettings, bool>> _bound = new();
-    private readonly ComboBox _power = new() { DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, Dock = DockStyle.Bottom, Font = Theme.Body(10.5f), BackColor = Color.FromArgb(28, 36, 68), ForeColor = Color.White };
+    private readonly ComboBox _power = new() { DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, Dock = DockStyle.Bottom, Font = Theme.Body(10.5f), BackColor = Theme.FieldBack, ForeColor = Theme.FieldText, Tag = "field" };
     private readonly Dictionary<string, NumericUpDown> _limits = new();
     private readonly ThemedLabel _inbox = new("", ThemedLabel.Kind.Dim) { Dock = DockStyle.Top, Height = 26 };
     private readonly ThemedLabel _outbox = new("", ThemedLabel.Kind.Dim) { Dock = DockStyle.Top, Height = 26 };
@@ -235,6 +235,20 @@ internal sealed class SettingsPage : Page
         _rt = rt;
         _shell = shell;
         Add(new ThemedLabel("Permisos y ajustes", ThemedLabel.Kind.Title) { Height = 44 });
+
+        var dark = new GlassButton { Text = "Oscuro", Location = new Point(0, 0), Width = 150, AccessibleName = "Tema oscuro" };
+        var light = new GlassButton { Text = "Claro", Location = new Point(162, 0), Width = 150, AccessibleName = "Tema claro" };
+        void Mark() { dark.Style = Theme.IsLight ? GlassButtonStyle.Secondary : GlassButtonStyle.Primary; light.Style = Theme.IsLight ? GlassButtonStyle.Primary : GlassButtonStyle.Secondary; dark.Invalidate(); light.Invalidate(); }
+        dark.Click += (_, _) => _rt.Settings.Update(s => s.Theme = "dark");
+        light.Click += (_, _) => _rt.Settings.Update(s => s.Theme = "light");
+        Theme.Changed += Mark;
+        Disposed += (_, _) => Theme.Changed -= Mark;
+        Mark();
+        var themeButtons = new Panel { Dock = DockStyle.Bottom, Height = 44, BackColor = Color.Transparent };
+        themeButtons.Controls.Add(light);
+        themeButtons.Controls.Add(dark);
+        Add(Card(130, new ThemedLabel("Apariencia", ThemedLabel.Kind.Heading) { Dock = DockStyle.Top },
+            new ThemedLabel("Oscuro es el predeterminado. El cambio se aplica al instante.", ThemedLabel.Kind.Dim) { Dock = DockStyle.Top, Height = 28 }, themeButtons));
 
         Add(Section("Conexión",
             Toggle("Aceptar conexiones", "Pausa o reanuda el acceso de todos los teléfonos.", s => s.AcceptConnections, (s, v) => s.AcceptConnections = v),
@@ -316,7 +330,7 @@ internal sealed class SettingsPage : Page
 
     private Control Limit(string key, string label, int min, int max, Action<HostSettings, int> write, Func<HostSettings, int> read)
     {
-        var box = new NumericUpDown { Minimum = min, Maximum = max, Width = 110, Font = Theme.Body(10.5f), BackColor = Color.FromArgb(28, 36, 68), ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle, AccessibleName = label };
+        var box = new NumericUpDown { Minimum = min, Maximum = max, Width = 110, Font = Theme.Body(10.5f), BackColor = Theme.FieldBack, ForeColor = Theme.FieldText, Tag = "field", BorderStyle = BorderStyle.FixedSingle, AccessibleName = label };
         box.ValueChanged += (_, _) =>
         {
             if (_loading) return;
@@ -377,7 +391,7 @@ internal sealed class FilesPage : Page
     private readonly ListView _list = new()
     {
         View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
-        BackColor = Color.FromArgb(18, 24, 48), ForeColor = Color.White, Font = Theme.Body(10f), AccessibleName = "Transferencias de archivos",
+        BackColor = Theme.FieldBack, ForeColor = Theme.FieldText, Tag = "field", Font = Theme.Body(10f), AccessibleName = "Transferencias de archivos",
     };
     private readonly Dictionary<string, ListViewItem> _rows = new();
 
@@ -454,7 +468,7 @@ internal sealed class LogPage : Page
     private readonly TextBox _text = new()
     {
         Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
-        BackColor = Color.FromArgb(18, 24, 48), ForeColor = Color.White, Font = new Font(FontFamily.GenericMonospace, 9.5f), AccessibleName = "Registro de actividad",
+        BackColor = Theme.FieldBack, ForeColor = Theme.FieldText, Tag = "field", Font = new Font(FontFamily.GenericMonospace, 9.5f), AccessibleName = "Registro de actividad",
     };
     private int _shown = -1;
 

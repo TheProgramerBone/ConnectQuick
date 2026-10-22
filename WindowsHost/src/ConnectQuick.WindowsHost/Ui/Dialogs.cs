@@ -51,6 +51,34 @@ internal class GlassForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         Icon = TrayIcons.Render(LinkState.Ready);
         ShowIcon = true;
+        Theme.Changed += OnThemeChanged;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) Theme.Changed -= OnThemeChanged;
+        base.Dispose(disposing);
+    }
+
+    private void OnThemeChanged()
+    {
+        if (IsDisposed) return;
+        if (InvokeRequired) { BeginInvoke(new Action(OnThemeChanged)); return; }
+        BackColor = Theme.Bg0;
+        ForeColor = Theme.Text;
+        Restyle(this);
+        Invalidate(true);
+    }
+
+    private static void Restyle(Control parent)
+    {
+        foreach (Control c in parent.Controls)
+        {
+            if (c is ThemedLabel label) label.ApplyTheme();
+            else if (c.Tag is "field") { c.BackColor = Theme.FieldBack; c.ForeColor = Theme.FieldText; }
+            c.Invalidate();
+            Restyle(c);
+        }
     }
 
     protected override void OnPaintBackground(PaintEventArgs e) => Theme.PaintBackdrop(e.Graphics, ClientRectangle);
@@ -121,17 +149,18 @@ internal sealed class AuthorizeForm : GlassForm
             list.Controls.Add(toggle);
         }
 
-        var sas = new Label
+        var sas = new ThemedLabel(request.SasCode.Length == 6 ? $"{request.SasCode[..3]} {request.SasCode[3..]}" : request.SasCode, ThemedLabel.Kind.Title)
         {
-            Text = request.SasCode.Length == 6 ? $"{request.SasCode[..3]} {request.SasCode[3..]}" : request.SasCode,
             Dock = DockStyle.Top,
             Height = 72,
             Font = Theme.Title(34f),
-            ForeColor = Theme.Accent,
-            BackColor = Color.Transparent,
             TextAlign = ContentAlignment.MiddleCenter,
             AccessibleName = "Código de comparación " + string.Join(" ", request.SasCode.ToCharArray()),
         };
+        sas.SetColor(Theme.Accent);
+        Action recolor = () => { if (!sas.IsDisposed) sas.SetColor(Theme.Accent); };
+        Theme.Changed += recolor;
+        FormClosed += (_, _) => Theme.Changed -= recolor;
         var ask = new ThemedLabel("¿Es el mismo código que ves en el teléfono? Si no coincide, rechaza.", ThemedLabel.Kind.Body) { Dock = DockStyle.Top, Height = 46, TextAlign = ContentAlignment.MiddleCenter };
         var name = new ThemedLabel($"“{request.DeviceName}” quiere controlar este PC", ThemedLabel.Kind.Heading) { Dock = DockStyle.Top, Height = 56, TextAlign = ContentAlignment.MiddleCenter, Font = Theme.Strong(13f) };
         var perms = new ThemedLabel("Permisos que concedes (puedes cambiarlos o revocar cuando quieras):", ThemedLabel.Kind.Dim) { Dock = DockStyle.Top, Height = 34, TextAlign = ContentAlignment.BottomLeft };
@@ -142,7 +171,7 @@ internal sealed class AuthorizeForm : GlassForm
         card.Controls.Add(sas);
         card.Controls.Add(name);
         card.Controls.Add(buttons);
-        Shown += (_, _) => reject.Focus();
+        Shown += (_, _) => { Activate(); BringToFront(); reject.Focus(); };
     }
 }
 
@@ -214,7 +243,9 @@ internal sealed class PairingWindow : GlassForm
     private readonly ThemedLabel _status;
     private readonly GlassButton _renew;
     private readonly System.Windows.Forms.Timer _countdown = new() { Interval = 1000 };
+    private readonly ThemedLabel _code = new("", ThemedLabel.Kind.Title) { Dock = DockStyle.Fill, Font = Theme.Title(44f), TextAlign = ContentAlignment.MiddleCenter, Visible = false };
     private DateTimeOffset _expiresAt;
+    private bool _incoming;
 
     public event Action? RenewRequested;
 
@@ -234,7 +265,7 @@ internal sealed class PairingWindow : GlassForm
         _renew = new GlassButton { Text = "Generar un código nuevo", Dock = DockStyle.Bottom, Height = 44, Visible = false, AccessibleName = "Generar un código QR nuevo" };
         _renew.Click += (_, _) => RenewRequested?.Invoke();
 
-        _status = new ThemedLabel("", ThemedLabel.Kind.Body) { Dock = DockStyle.Bottom, Height = 40, TextAlign = ContentAlignment.MiddleCenter };
+        _status = new ThemedLabel("", ThemedLabel.Kind.Body) { Dock = DockStyle.Bottom, Height = 60, TextAlign = ContentAlignment.MiddleCenter };
         _qrBox = new PictureBox
         {
             SizeMode = PictureBoxSizeMode.Zoom,
@@ -250,6 +281,11 @@ internal sealed class PairingWindow : GlassForm
         var title = new ThemedLabel("Escanea con la app de ConnectQuick", ThemedLabel.Kind.Heading) { Dock = DockStyle.Top, Height = 40, TextAlign = ContentAlignment.MiddleCenter };
         var sub = new ThemedLabel("Después compara el código de 6 cifras en ambos aparatos.", ThemedLabel.Kind.Dim) { Dock = DockStyle.Top, TextAlign = ContentAlignment.MiddleCenter };
 
+        _code.SetColor(Theme.Accent);
+        Action recolor = () => { if (!_code.IsDisposed) _code.SetColor(Theme.Accent); };
+        Theme.Changed += recolor;
+        FormClosed += (_, _) => Theme.Changed -= recolor;
+        qrHolder.Controls.Add(_code);
         card.Controls.Add(qrHolder);
         card.Controls.Add(_renew);
         card.Controls.Add(_status);
@@ -273,13 +309,48 @@ internal sealed class PairingWindow : GlassForm
         var old = _qrBox.Image;
         _qrBox.Image = new Bitmap(decoded); // copy: the decoded image needs its stream alive, the copy does not
         old?.Dispose();
+        _incoming = false;
+        _code.Visible = false;
+        _qrBox.Visible = true;
         _renew.Visible = false;
         if (!_countdown.Enabled) _countdown.Start();
         UpdateCountdown();
     }
 
+    /// <summary>
+    /// A phone scanned the code: the QR is single-use and now useless, so replace it with the 6-digit code to compare
+    /// and say plainly that the next step is the authorise window. Without this the PC looked like nothing happened.
+    /// </summary>
+    public void ShowIncoming(string deviceName, string sasCode)
+    {
+        _incoming = true;
+        _countdown.Stop();
+        _qrBox.Visible = false;
+        _renew.Visible = false;
+        _code.Text = sasCode.Length == 6 ? $"{sasCode[..3]} {sasCode[3..]}" : sasCode;
+        _code.AccessibleName = "Código de comparación " + string.Join(" ", sasCode.ToCharArray());
+        _code.Visible = true;
+        _status.ForeColor = Theme.Text;
+        _status.Text = $"«{deviceName}» escaneó el código. Confírmalo en la ventana de autorización.";
+        _status.AccessibleName = _status.Text;
+    }
+
+    /// <summary>Final state after the person at the PC decided (or the connection was lost).</summary>
+    public void ShowOutcome(string message, bool offerNewCode)
+    {
+        _incoming = true;
+        _countdown.Stop();
+        _qrBox.Visible = false;
+        _code.Visible = false;
+        _status.ForeColor = Theme.Text;
+        _status.Text = message;
+        _status.AccessibleName = message;
+        _renew.Visible = offerNewCode;
+    }
+
     private void UpdateCountdown()
     {
+        if (_incoming) return;
         var remaining = _expiresAt - DateTimeOffset.UtcNow;
         if (remaining <= TimeSpan.Zero)
         {

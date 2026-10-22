@@ -20,6 +20,8 @@ public enum PowerPolicy
 public sealed class HostSettings
 {
     public bool AcceptConnections { get; set; } = true;
+    /// <summary>Appearance of the app: "dark" (default) or "light".</summary>
+    public string Theme { get; set; } = "dark";
     /// <summary>Ask on the PC every time a paired phone connects (in addition to pairing consent).</summary>
     public bool RequireApprovalPerSession { get; set; } = false;
 
@@ -57,6 +59,7 @@ public sealed class HostSettings
         MaxStreamFps = Math.Clamp(MaxStreamFps, 1, 60);
         MaxStreamBitrateKbps = Math.Clamp(MaxStreamBitrateKbps, 100, 50_000);
         if (!Enum.IsDefined(Power)) Power = PowerPolicy.LockOnly;
+        Theme = string.Equals(Theme, "light", StringComparison.OrdinalIgnoreCase) ? "light" : "dark";
     }
 
     public bool PermissionEnabled(string permission) => permission switch

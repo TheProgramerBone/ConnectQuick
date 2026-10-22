@@ -37,6 +37,7 @@ class MainActivity : HubActivity() {
                 ),
                 Ui.lp(this, bottom = 14),
             )
+            content.addView(appearanceCard(), Ui.lp(this, bottom = 14))
             return
         }
 
@@ -98,7 +99,24 @@ class MainActivity : HubActivity() {
             ),
             Ui.lp(this, top = 6, bottom = 8),
         )
+        content.addView(appearanceCard(), Ui.lp(this, top = 6, bottom = 8))
         content.gravity = Gravity.TOP
+    }
+
+    /** Dark/light switch. Shown with or without a paired PC; applies at once by recreating the screen. */
+    private fun appearanceCard(): LinearLayout {
+        fun choose(light: Boolean) {
+            if (Ui.light == light) return
+            Ui.light = light
+            connectQuick.store.saveLightTheme(light)
+            recreate()
+        }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val dark = Ui.button(this, "Oscuro", if (Ui.light) Ui.ButtonStyle.SECONDARY else Ui.ButtonStyle.PRIMARY) { choose(false) }
+        val light = Ui.button(this, "Claro", if (Ui.light) Ui.ButtonStyle.PRIMARY else Ui.ButtonStyle.SECONDARY) { choose(true) }
+        row.addView(dark, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = Ui.dp(this@MainActivity, 6) })
+        row.addView(light, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = Ui.dp(this@MainActivity, 6) })
+        return Ui.card(this, Ui.heading(this, "Apariencia"), Ui.dim(this, "Oscuro es el predeterminado."), Ui.spacer(this, 8), row)
     }
 
     override fun render() {

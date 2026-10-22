@@ -38,6 +38,7 @@ class ConnectQuickApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        dev.connectquick.controller.ui.Ui.light = store.lightTheme()
         store.load()?.let { buildHub(it) }
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: Activity) {

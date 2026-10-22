@@ -32,9 +32,7 @@ abstract class HubActivity : Activity() {
 
     final override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setBackgroundDrawable(Ui.backdrop())
-        window.statusBarColor = Ui.BG1
-        window.navigationBarColor = Ui.BG0
+        Ui.styleWindow(window)
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val pad = Ui.dp(this@HubActivity, 20)

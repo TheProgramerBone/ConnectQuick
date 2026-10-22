@@ -14,27 +14,58 @@ internal static class Theme
 {
     public static bool HighContrast => SystemInformation.HighContrast;
 
+    /// <summary>"dark" (default) or "light". Persisted in <c>HostSettings.Theme</c>.</summary>
+    public static bool IsLight { get; private set; }
+
+    /// <summary>Raised after <see cref="Apply"/> changes the mode so open windows can repaint.</summary>
+    public static event Action? Changed;
+
+    public static void Apply(string? mode)
+    {
+        var light = string.Equals(mode, "light", StringComparison.OrdinalIgnoreCase);
+        if (light == IsLight) return;
+        IsLight = light;
+        Changed?.Invoke();
+    }
+
+    private static Color Pick(Color dark, Color light) => IsLight ? light : dark;
+
     // Backdrop (top → bottom of the window).
-    public static Color Bg0 => HighContrast ? SystemColors.Window : Color.FromArgb(9, 13, 27);
-    public static Color Bg1 => HighContrast ? SystemColors.Window : Color.FromArgb(24, 30, 58);
+    public static Color Bg0 => HighContrast ? SystemColors.Window : Pick(Color.FromArgb(7, 10, 24), Color.FromArgb(226, 236, 250));
+    public static Color Bg1 => HighContrast ? SystemColors.Window : Pick(Color.FromArgb(22, 28, 62), Color.FromArgb(246, 249, 255));
 
-    // Glass surfaces: translucent white over the backdrop, with a brighter hairline on top.
-    public static Color GlassFill => HighContrast ? SystemColors.Window : Color.FromArgb(34, 255, 255, 255);
-    public static Color GlassFillHover => HighContrast ? SystemColors.Highlight : Color.FromArgb(54, 255, 255, 255);
-    public static Color GlassBorder => HighContrast ? SystemColors.WindowText : Color.FromArgb(78, 255, 255, 255);
-    public static Color GlassHighlight => Color.FromArgb(HighContrast ? 0 : 60, 255, 255, 255);
+    // Glass surfaces: translucent layers over the backdrop, with a brighter hairline on top.
+    public static Color GlassFill => HighContrast ? SystemColors.Window : Pick(Color.FromArgb(30, 255, 255, 255), Color.FromArgb(150, 255, 255, 255));
+    public static Color GlassFillHover => HighContrast ? SystemColors.Highlight : Pick(Color.FromArgb(56, 255, 255, 255), Color.FromArgb(205, 255, 255, 255));
+    public static Color GlassBorder => HighContrast ? SystemColors.WindowText : Pick(Color.FromArgb(84, 255, 255, 255), Color.FromArgb(150, 120, 140, 185));
+    public static Color GlassHighlight => Color.FromArgb(HighContrast ? 0 : IsLight ? 170 : 66, 255, 255, 255);
+    public static Color GlassShade => Color.FromArgb(HighContrast ? 0 : IsLight ? 22 : 60, IsLight ? 90 : 0, IsLight ? 110 : 0, IsLight ? 160 : 20);
 
-    public static Color Text => HighContrast ? SystemColors.WindowText : Color.FromArgb(240, 244, 255);     // ~16:1 on Bg0
-    public static Color TextDim => HighContrast ? SystemColors.GrayText : Color.FromArgb(172, 184, 214);       // ~8:1 on Bg0
+    public static Color Text => HighContrast ? SystemColors.WindowText : Pick(Color.FromArgb(240, 244, 255), Color.FromArgb(17, 24, 48));       // 16:1 on Bg0 / 14:1 light
+    public static Color TextDim => HighContrast ? SystemColors.GrayText : Pick(Color.FromArgb(172, 184, 214), Color.FromArgb(64, 78, 112));       // 8:1 dark / 6.5:1 light
 
-    public static Color Accent => HighContrast ? SystemColors.Highlight : Color.FromArgb(104, 208, 255);
-    public static Color AccentFill => HighContrast ? SystemColors.Highlight : Color.FromArgb(46, 128, 230);
-    public static Color OnAccent => HighContrast ? SystemColors.HighlightText : Color.White;                   // 4.9:1 on AccentFill
-    public static Color Ok => HighContrast ? SystemColors.WindowText : Color.FromArgb(94, 226, 168);
-    public static Color Warn => HighContrast ? SystemColors.WindowText : Color.FromArgb(255, 204, 96);
-    public static Color Danger => HighContrast ? SystemColors.WindowText : Color.FromArgb(255, 122, 132);
+    public static Color Accent => HighContrast ? SystemColors.Highlight : Pick(Color.FromArgb(104, 208, 255), Color.FromArgb(0, 96, 190));
+    public static Color AccentFill => HighContrast ? SystemColors.Highlight : Pick(Color.FromArgb(46, 128, 230), Color.FromArgb(0, 102, 204));
+    public static Color AccentFillTop => HighContrast ? SystemColors.Highlight : Pick(Color.FromArgb(92, 168, 255), Color.FromArgb(58, 150, 245));
+    public static Color OnAccent => HighContrast ? SystemColors.HighlightText : Color.White;                   // 4.9:1+ on AccentFill
+    public static Color Ok => HighContrast ? SystemColors.WindowText : Pick(Color.FromArgb(94, 226, 168), Color.FromArgb(0, 128, 84));
+    public static Color Warn => HighContrast ? SystemColors.WindowText : Pick(Color.FromArgb(255, 204, 96), Color.FromArgb(160, 90, 0));
+    public static Color Danger => HighContrast ? SystemColors.WindowText : Pick(Color.FromArgb(255, 122, 132), Color.FromArgb(190, 30, 55));
     public static Color DangerFill => HighContrast ? SystemColors.Highlight : Color.FromArgb(190, 52, 72);     // 5.6:1 with white
-    public static Color Focus => HighContrast ? SystemColors.Highlight : Color.FromArgb(255, 255, 255);
+    public static Color Focus => HighContrast ? SystemColors.Highlight : Pick(Color.FromArgb(255, 255, 255), Color.FromArgb(0, 70, 160));
+
+    // Text fields (combo, numeric, list, log): solid so text stays readable on any backdrop.
+    public static Color FieldBack => HighContrast ? SystemColors.Window : Pick(Color.FromArgb(20, 27, 56), Color.FromArgb(255, 255, 255));
+    public static Color FieldText => HighContrast ? SystemColors.WindowText : Pick(Color.White, Color.FromArgb(17, 24, 48));
+    public static Color SwitchOff => Pick(Color.FromArgb(90, 255, 255, 255), Color.FromArgb(150, 120, 135, 170));
+
+    // Soft "aurora" lights behind the glass: (x, y) as fractions of the window, radius as a fraction of its larger side.
+    private static readonly (float X, float Y, float R, int Dark, int Light)[] Orbs =
+    {
+        (0.88f, 0.02f, 0.55f, unchecked((int)0x2E5AAAFF), unchecked((int)0x6090C8FF)),
+        (0.10f, 0.95f, 0.50f, unchecked((int)0x288A5CFF), unchecked((int)0x58B79CFF)),
+        (0.55f, 0.55f, 0.35f, unchecked((int)0x1A22D4C8), unchecked((int)0x40FFC6E8)),
+    };
 
     public const int Radius = 14;
     public const int Gap = 12;
@@ -70,7 +101,7 @@ internal static class Theme
         return path;
     }
 
-    /// <summary>Paints the window backdrop: a vertical gradient with a soft cool glow in the top-right corner.</summary>
+    /// <summary>Paints the window backdrop: a vertical gradient with soft coloured lights, like light refracting through crystal.</summary>
     public static void PaintBackdrop(Graphics g, Rectangle bounds)
     {
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
@@ -82,17 +113,24 @@ internal static class Theme
         using (var brush = new LinearGradientBrush(bounds, Bg1, Bg0, LinearGradientMode.Vertical))
             g.FillRectangle(brush, bounds);
 
-        var glow = new Rectangle(bounds.Width / 2, -bounds.Height / 3, bounds.Width, bounds.Height);
-        using var path = new GraphicsPath();
-        path.AddEllipse(glow);
-        using var glowBrush = new PathGradientBrush(path)
-        {
-            CenterColor = Color.FromArgb(46, 90, 170, 255),
-            SurroundColors = new[] { Color.FromArgb(0, 90, 170, 255) },
-        };
         var state = g.Save();
         g.SetClip(bounds);
-        g.FillEllipse(glowBrush, glow);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var side = Math.Max(bounds.Width, bounds.Height);
+        foreach (var (x, y, r, dark, light) in Orbs)
+        {
+            var argb = Color.FromArgb(IsLight ? light : dark);
+            var radius = (int)(side * r);
+            var box = new Rectangle((int)(bounds.Width * x) - radius, (int)(bounds.Height * y) - radius, radius * 2, radius * 2);
+            using var path = new GraphicsPath();
+            path.AddEllipse(box);
+            using var glow = new PathGradientBrush(path)
+            {
+                CenterColor = argb,
+                SurroundColors = new[] { Color.FromArgb(0, argb) },
+            };
+            g.FillEllipse(glow, box);
+        }
         g.Restore(state);
     }
 

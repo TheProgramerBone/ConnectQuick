@@ -34,7 +34,15 @@ class HostStore(context: Context) {
         prefs.edit().putFloat(KEY_SENS, config.sensitivity).putBoolean(KEY_NATURAL, config.naturalScroll).apply()
     }
 
+    /** "Light" theme preference; dark is the default. */
+    fun lightTheme(): Boolean = prefs.getBoolean(KEY_LIGHT, false)
+
+    fun saveLightTheme(light: Boolean) {
+        prefs.edit().putBoolean(KEY_LIGHT, light).apply()
+    }
+
     private companion object {
+        const val KEY_LIGHT = "theme_light"
         const val KEY_HOST = "paired_host"
         const val KEY_SENS = "touchpad_sensitivity"
         const val KEY_NATURAL = "touchpad_natural_scroll"

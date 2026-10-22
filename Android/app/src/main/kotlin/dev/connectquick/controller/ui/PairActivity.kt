@@ -36,9 +36,7 @@ class PairActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setBackgroundDrawable(Ui.backdrop())
-        window.statusBarColor = Ui.BG1
-        window.navigationBarColor = Ui.BG0
+        Ui.styleWindow(window)
         column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val pad = Ui.dp(this@PairActivity, 20)
