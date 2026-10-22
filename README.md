@@ -29,6 +29,7 @@ Docs/        Architecture, security, status, test guide
   WebRTC while control rides the encrypted relay session, scaling measurements, how to run TURN.
 - [`Docs/SECURITY.md`](Docs/SECURITY.md) — device identity, pairing, what the relay can and
   cannot see, what's hardened today versus still open.
+- [`Docs/PENDIENTES.md`](Docs/PENDIENTES.md) — open work and a plan per item (read this to resume).
 - [`Docs/STATUS.md`](Docs/STATUS.md) — what is real, what has not been run on real hardware, what's next.
 - [`Docs/GUIA_DE_PRUEBAS.md`](Docs/GUIA_DE_PRUEBAS.md) — step-by-step (in Spanish) to pair a real
   Windows PC with a real Android phone over your LAN.
@@ -36,6 +37,21 @@ Docs/        Architecture, security, status, test guide
 - [`Backend/README.md`](Backend/README.md) — running and testing the backend locally.
 - [`WindowsHost/README.md`](WindowsHost/README.md) — running and testing the Windows tray app.
 - [`Android/README.md`](Android/README.md) — building, testing, and installing the Android app.
+
+## One-step build (Windows installer + portable ZIP + Android APK)
+
+Full walkthrough in Spanish (install, test, portable version, improvement ideas):
+[`Docs/GUIA_INSTALACION_Y_PRUEBAS.md`](Docs/GUIA_INSTALACION_Y_PRUEBAS.md).
+
+On a Windows PC, double-click `build-all.bat` (or run `.\build-all.ps1`). It installs any missing
+prerequisites (.NET 8 SDK, JDK 17, Inno Setup, Android SDK) and writes `dist\ConnectQuick-Setup.exe`
+and `dist\ConnectQuick.apk`. The installer also offers (checked by default) a local copy of the
+Backend — portable Node + production deps, auto-started with Windows, firewall rule added when
+installed as admin — so one PC can act as its own relay on the LAN. Use `-SkipBackend` to leave it
+out and `-Relay wss://your-server` to point the Host at a hosted backend instead (default:
+`ws://<this PC's LAN IP>:8443`); the phone reads the relay from the pairing QR. To use it from any network without installing
+anything on the phone, run `.\build-all.ps1 -Funnel` (Tailscale Funnel on the PC) — see
+[`Docs/ACCESO_REMOTO.md`](Docs/ACCESO_REMOTO.md).
 
 ## Quickstart
 

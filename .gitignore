@@ -37,3 +37,6 @@ Android/.cxx/
 
 # Cross-platform test harness
 Tests/node_modules/
+
+# Build output of build-all.ps1
+dist/
