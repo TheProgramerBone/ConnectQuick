@@ -12,6 +12,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { loadConfig, type Config } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { HostRepository } from "./registry/hostRepository.ts";
+import { defaultRelayIp, startTurnServer, type StartedTurnServer } from "./turn/turnServer.ts";
 import { DeviceRepository } from "./registry/deviceRepository.ts";
 import { PairingRepository } from "./registry/pairingRepository.ts";
 import { Logger } from "./log.ts";
@@ -284,9 +285,20 @@ export function createApp(config: Config = loadConfig()): App {
 }
 
 /** Builds the app and binds it to config.port (0 = ephemeral, used by tests). */
-export function startServer(config: Config = loadConfig()): Promise<StartedServer> {
+export async function startServer(config: Config = loadConfig()): Promise<StartedServer> {
   const app = createApp(config);
   const { ctx, httpServer } = app;
+  let turn: StartedTurnServer | null = null;
+  const embedded = config.ice.embeddedTurn;
+  if (embedded && config.ice.turnSecret) {
+    const relayIp = embedded.relayIp ?? defaultRelayIp();
+    turn = await startTurnServer({ port: embedded.port, relayIp, secret: config.ice.turnSecret, realm: "connectquick", log: ctx.log });
+    if (config.ice.turnUrls.length === 0) {
+      // No public address configured (LAN testing): controllers dial the TCP port directly.
+      config.ice.turnUrls = [`turn:${relayIp}:${turn.port}?transport=tcp`];
+    }
+    ctx.log.info("embedded turn ready", { urls: config.ice.turnUrls });
+  }
   return new Promise((resolve, reject) => {
     httpServer.once("error", reject);
     httpServer.listen(config.port, () => {
@@ -307,7 +319,7 @@ export function startServer(config: Config = loadConfig()): Promise<StartedServe
           new Promise<void>((res) => {
             for (const conn of ctx.connections.all()) conn.socket.terminate();
             httpServer.close(() => res());
-          }),
+          }).then(() => turn?.close()),
       };
       resolve(started);
     });

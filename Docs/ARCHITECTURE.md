@@ -122,7 +122,19 @@ add pub/sub (Redis) for `session.*` forwarding. Presence for one host is then ow
 
 ## Running TURN (needed for streaming across different networks)
 
-On the same LAN, or when STUN finds a direct path, nothing else is needed. Behind symmetric NAT / CGNAT / strict firewalls the stream needs a relay:
+On the same LAN, or when STUN finds a direct path, nothing else is needed. Behind symmetric NAT / CGNAT / strict firewalls the stream needs a relay.
+
+**Embedded TURN (the PC is its own relay).** When the backend runs on the PC and is published with Tailscale Funnel
+(`build-all.ps1 -Funnel`), it also starts a small TURN server (`Backend/src/turn/`, RFC 5766 subset: client over TCP,
+relayed UDP; Allocate/Refresh/CreatePermission/ChannelBind, Send/Data indications, ChannelData; REST credentials from `ice.ts`).
+Funnel terminates TLS on public port 10000 and forwards plain TCP to `TURN_EMBEDDED_PORT` (3478). Phones get
+`turns:<pc>.ts.net:10000?transport=tcp`; the relay socket lives on the PC, so the host reaches it through its own host
+candidates and is given no TURN at all. Peers are restricted to the machine's own IPv4 addresses (never an open relay),
+allocations are capped (32 total, 4 per device) and the server only ever forwards DTLS-SRTP ciphertext. Unit/integration
+tests drive it with a TURN client in `Backend/test/unit/turn.test.ts`; it has **not** yet been exercised with real
+libwebrtc/SIPSorcery over Funnel.
+
+**Separate coturn** (a VPS, or several PCs sharing one relay):
 
 1. Run coturn with `use-auth-secret`, `static-auth-secret=<SECRET>`, `realm=<your domain>`, TLS on 5349 and UDP/TCP 3478 open, and a relay port range open in the firewall.
 2. Start the backend with `TURN_URLS=turn:turn.example.com:3478?transport=udp,turns:turn.example.com:5349` and `TURN_SECRET=<SECRET>` (and `TURN_TTL_SECONDS` if desired).

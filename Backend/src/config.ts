@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 export interface IceConfig {
   /** STUN server URLs handed to clients (stun:host:port). Empty list = no STUN. */
   stunUrls: string[];
@@ -6,6 +7,13 @@ export interface IceConfig {
   /** coturn `static-auth-secret`. Never sent to clients; only used to mint short-lived credentials. */
   turnSecret: string | null;
   turnTtlSeconds: number;
+  /**
+   * TURN server embedded in this process (TCP; for a PC that is its own relay behind Tailscale Funnel
+   * or any TLS-terminating TCP proxy). null = disabled. When set, `turnUrls` are what controllers are
+   * told to dial (the public, usually `turns:` address) and hosts get no TURN: the relayed traffic
+   * ends on this very machine, which the host reaches directly.
+   */
+  embeddedTurn: { port: number; relayIp: string | null } | null;
 }
 
 export interface SessionLimits {
@@ -76,8 +84,13 @@ function listEnv(env: NodeJS.ProcessEnv, name: string, fallback: string[]): stri
 const DEFAULT_STUN = ["stun:stun.l.google.com:19302"];
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const embeddedPortRaw = env["TURN_EMBEDDED_PORT"];
+  const embeddedTurn = embeddedPortRaw !== undefined && embeddedPortRaw !== ""
+    ? { port: intEnv(env, "TURN_EMBEDDED_PORT", 3478, 0), relayIp: env["TURN_RELAY_IP"] ? env["TURN_RELAY_IP"] : null }
+    : null;
   const turnUrls = listEnv(env, "TURN_URLS", []);
-  const turnSecret = env["TURN_SECRET"] ? env["TURN_SECRET"] : null;
+  // The embedded server only needs a secret shared with this same process: a random one per run is fine.
+  const turnSecret = env["TURN_SECRET"] ? env["TURN_SECRET"] : embeddedTurn ? randomBytes(32).toString("base64") : null;
   if (turnUrls.length > 0 && !turnSecret) {
     throw new Error("TURN_URLS is set but TURN_SECRET is not: refusing to hand out unauthenticated TURN URLs");
   }
@@ -110,6 +123,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       turnUrls,
       turnSecret,
       turnTtlSeconds: intEnv(env, "TURN_TTL_SECONDS", 3600, 60),
+      embeddedTurn,
     },
     limits: {
       maxConnections: intEnv(env, "MAX_CONNECTIONS", 5000, 1),

@@ -7,10 +7,21 @@ sigue corriendo en tu propio PC, y Tailscale le da una dirección pública fija 
 
 Solo hace falta Tailscale **en el PC**.
 
+## Pantalla en vivo desde otra red (relevo de vídeo incluido)
+
+El control (ratón, teclado, portapapeles, archivos…) viaja por el Backend. El **vídeo** intenta ir
+directo entre el PC y el móvil; con datos móviles o algunos routers no hay camino directo y hace falta
+un **relevo (TURN)**. Con `-Funnel`, el Backend del PC incluye ese relevo y Funnel lo publica en el
+puerto **10000** (`turns://tu-pc.tu-red.ts.net:10000`). No hay que instalar coturn ni nada más: el
+relevo termina en tu propio PC y solo deja pasar tráfico hacia el PC (no puede usarse para otra cosa).
+Si actualizas desde una versión anterior, vuelve a generar e instalar con `-Funnel` y ejecuta otra vez
+*Activar acceso desde Internet (Funnel)*: ahora publica dos reglas (443 y 10000).
+
 ## Qué expone y qué no
 
-- Expone solo el puerto del Backend (8443 local → 443 público). No expone tu escritorio ni archivos:
-  esas funciones ni existen todavía, y el Backend nunca las ve (`Docs/SECURITY.md`).
+- Expone el puerto del Backend (8443 local → 443 público) y el relevo de vídeo (3478 local → 10000
+  público, TLS). No expone tu escritorio ni tus archivos: todo va cifrado de extremo a extremo y el
+  Backend y el relevo solo ven datos cifrados (`Docs/SECURITY.md`).
 - Cada dispositivo se autentica con su clave Ed25519 y el Backend limita solicitudes por minuto,
   pero **es un servicio abierto a Internet**. Si no lo estás usando, puedes apagarlo
   (ver "Apagar Funnel").
@@ -40,7 +51,12 @@ Solo hace falta Tailscale **en el PC**.
 
 ```powershell
 tailscale funnel status          # debe listar https://tu-pc.tu-red.ts.net -> http://127.0.0.1:8443
+                                 # y tcp://tu-pc.tu-red.ts.net:10000 (TLS) -> tcp://127.0.0.1:3478
 ```
+
+Para el vídeo: con el móvil en datos móviles abre **Pantalla**. Si aparece «el servidor no ofrece
+relevo de vídeo», la regla del puerto 10000 no está activa: vuelve a ejecutar *Activar acceso desde
+Internet (Funnel)*. Si tu versión de Tailscale no acepta `--tls-terminated-tcp`, actualízala.
 
 Desde el móvil, con datos móviles (Wi-Fi apagado), escanea el QR. Si se queda en "Conectando...":
 - Revisa que el Backend esté corriendo (proceso `connectquick-server.exe` en el Administrador de tareas).
@@ -52,6 +68,7 @@ Desde el móvil, con datos móviles (Wi-Fi apagado), escanea el QR. Si se queda 
 
 ```powershell
 tailscale funnel --https=443 off
+tailscale funnel --tls-terminated-tcp=10000 off
 ```
 
 ## Notas

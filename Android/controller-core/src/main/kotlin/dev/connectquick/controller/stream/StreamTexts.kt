@@ -61,7 +61,7 @@ object StreamTexts {
         "negotiation_failed", "bad_answer", "offer_failed" -> "No se pudo acordar la conexión de vídeo. Inténtalo de nuevo."
         "connection_lost" -> "Se cortó el vídeo. Revisa la red y vuelve a iniciar."
         "ice_failed_no_relay" ->
-            "La red no permitió la conexión directa y no hay servidor de relevo (TURN) configurado. En la misma Wi-Fi suele funcionar; desde otra red hace falta un relevo."
+            "La red no permitió la conexión directa y el servidor no ofrece relevo de vídeo (TURN). En la misma Wi-Fi suele funcionar; para otras redes instala ConnectQuick en el PC con «acceso desde Internet» (Tailscale Funnel), que incluye el relevo."
         "ice_failed" -> "No se logró conectar el vídeo, ni siquiera con el servidor de relevo. Revisa la red del PC y del teléfono."
         null, "" -> "Error desconocido."
         else -> "El PC respondió: $reason."

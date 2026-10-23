@@ -5,5 +5,5 @@ import { buildIceConfig } from "../../ice.ts";
 
 /** Any authenticated Host or Controller may ask for ICE servers; credentials are per-device and short-lived. */
 export function handleIceRequest(ctx: AppContext, conn: Connection, _envelope: Envelope): void {
-  conn.send("ice.config", { ...buildIceConfig(ctx.config, conn.deviceId!) });
+  conn.send("ice.config", { ...buildIceConfig(ctx.config, conn.deviceId!, Date.now(), conn.role) });
 }

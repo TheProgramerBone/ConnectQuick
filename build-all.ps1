@@ -148,7 +148,8 @@ if ($Funnel) {
     if ($tsStatus.BackendState -ne "Running") {
         throw "Tailscale is not signed in (state: $($tsStatus.BackendState)). Open Tailscale, sign in, then re-run. See Docs\ACCESO_REMOTO.md."
     }
-    if (-not $Relay) { $Relay = "wss://" + $tsStatus.Self.DNSName.TrimEnd('.') }
+    $tsHost = $tsStatus.Self.DNSName.TrimEnd('.')
+    if (-not $Relay) { $Relay = "wss://" + $tsHost }
 }
 if (-not $Relay) {
     $ip = Get-NetIPConfiguration -ErrorAction SilentlyContinue |
@@ -197,10 +198,17 @@ if (-not $SkipBackend) {
     $env:Path = "$nodeDir;$env:Path"
     Exec "$nodeDir\npm.cmd" @("ci", "--omit=dev", "--no-audit", "--no-fund") "$backendDir\Backend"
 
+    # With Funnel the Backend also runs a small TURN server (TCP 3478, published by Funnel as TLS on
+    # :10000) so the live screen works when the phone and the PC are on different networks.
+    $turnEnv = ""
+    if ($Funnel) {
+        $turnEnv = "set TURN_EMBEDDED_PORT=3478`r`nset TURN_URLS=turns:${tsHost}:10000?transport=tcp`r`n"
+    }
     @"
 @echo off
-rem ConnectQuick local relay (LAN mode). Data lives in %APPDATA%\ConnectQuick.
+rem ConnectQuick local relay. Data lives in %APPDATA%\ConnectQuick.
 set PORT=8443
+$turnEnv
 set DB_PATH=%APPDATA%\ConnectQuick\backend.sqlite
 if not exist "%APPDATA%\ConnectQuick" mkdir "%APPDATA%\ConnectQuick"
 cd /d "%~dp0Backend"
@@ -228,6 +236,8 @@ pause
 exit /b 1
 :run
 "%TS%" funnel --bg 8443
+rem Video relay (TURN) for when the phone is on another network: TLS on :10000 -> local TCP 3478.
+"%TS%" funnel --bg --tls-terminated-tcp=10000 tcp://127.0.0.1:3478
 echo.
 echo Si arriba aparecio un enlace, abrelo para habilitar Funnel y vuelve a ejecutar este archivo.
 echo Estado actual:

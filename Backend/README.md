@@ -44,6 +44,7 @@ Environment variables (all optional, see [`src/config.ts`](src/config.ts) for de
 | `RAW_FRAMES_PER_SECOND` | `600` | Per-connection raw-frame limit |
 | `STUN_URLS` | Google public STUN | Comma list handed to clients for WebRTC |
 | `TURN_URLS` / `TURN_SECRET` / `TURN_TTL_SECONDS` | unset / unset / `3600` | coturn relay + shared secret for ephemeral credentials (URLs without a secret are refused) |
+| `TURN_EMBEDDED_PORT` / `TURN_RELAY_IP` | unset / first LAN IPv4 | runs the built-in TURN server (TCP) on this port; `TURN_URLS` is then the public address phones dial (e.g. `turns:pc.tailnet.ts.net:10000?transport=tcp`), the secret is generated if unset, hosts get no TURN. Peers are limited to this machine's own addresses |
 | `SHUTDOWN_GRACE_MS` | `5000` | How long `SIGTERM` waits after telling clients to reconnect |
 | `METRICS_TOKEN` | unset | Bearer token required for `/metrics` (unset = not exposed) |
 
@@ -83,7 +84,7 @@ server never has — and it never carries desktop video.
 - Run **one instance** per deployment. Connection state is in memory by design. Measured on a 4-vCPU VM: ~18 000 relayed
   frames/s at 500 live sessions used 0.56 of one core and 143 MB (see `Docs/ARCHITECTURE.md`, *Scaling*, for the table, the
   triggers for going multi-instance and the design). Restarts are survived by clients automatically; `SIGTERM` drains gracefully.
-- For streaming across different networks run coturn and set `TURN_URLS`/`TURN_SECRET` (`Docs/ARCHITECTURE.md`, *Running TURN*).
+- For streaming across different networks either set `TURN_EMBEDDED_PORT` (backend on the PC itself, published with Tailscale Funnel, `Docs/ACCESO_REMOTO.md`) or run coturn and set `TURN_URLS`/`TURN_SECRET` (`Docs/ARCHITECTURE.md`, *Running TURN*).
 - `DB_PATH` should point at a persistent volume; the SQLite file only holds host/device public
   keys, names, and pairing bookkeeping (see §"Privacidad" in the protocol spec) — it is small and
   fine to back up/restore wholesale.

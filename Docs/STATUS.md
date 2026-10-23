@@ -149,6 +149,13 @@ destructive dialogs.
   keep their value). controller-core 110 tests green; app compile-checked; nothing run on a device.
   **Not done** (need host-side C# that cannot be compiled or run in the cloud sandbox): input over a direct WebRTC
   DataChannel, monitor selection, desktop audio.
+- **Different networks (Oct 2026)**: the backend embeds a TURN server (`Backend/src/turn/`, TCP client transport, UDP
+  relay, REST credentials, peers limited to the PC's own addresses). `build-all.ps1 -Funnel` enables it
+  (`TURN_EMBEDDED_PORT=3478`, `TURN_URLS=turns:<pc>.ts.net:10000?transport=tcp`) and `activar-funnel.cmd` publishes it with
+  `tailscale funnel --bg --tls-terminated-tcp=10000 tcp://127.0.0.1:3478`. Phones get the TURN URL; hosts get none
+  (the relay is on their machine). Backend tests 104 green (turn codec, auth, relaying both ways, channels, no open relay,
+  server wiring). **Not verified**: real libwebrtc ↔ embedded TURN over Funnel (TLS cert acceptance by libwebrtc, Funnel
+  `--tls-terminated-tcp` on the owner's Tailscale version), SIPSorcery reaching the relay through its host candidates.
 **Verified by**: wording/state logic is unit-tested (`LinkPresentationTest`, `StreamTextsTest`); both UIs compile.
 **Not verified**: appearance, layout at different DPIs/font scales, TalkBack/Narrator behaviour, performance, and every
 interaction on a real screen. Expect visual polish work once they are run.

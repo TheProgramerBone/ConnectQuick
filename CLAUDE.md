@@ -34,11 +34,14 @@ Docs/         STATUS, ARCHITECTURE, SECURITY, GUIA_DE_PRUEBAS, COMPILAR_Y_CONFIR
 - **Android**: `RemoteLink` (auto-reconnect state machine with backoff, REVOKED/FAILED/HOST_OFFLINE phases) + `ControllerHub` (creates feature clients per verified session) ; `LinkTexts`/`StreamTexts` hold all state wording (unit-tested).
   `ConnectQuickApp` owns the single hub; link runs only while the app is visible (+60 s grace). Release builds are TLS-only (`src/debug/res/xml/network_security_config.xml` allows `ws://` in debug).
 - **Windows**: `HostRuntime` is the composition root shared by the WinForms app and `HostHarness`; Win32 adapters sit behind interfaces (`IInputInjector`, `IClipboard`, `IMediaKeys`, `IPowerExecutor`, `IScreenCapturer`).
+- **Different networks**: control always rides the backend; video needs TURN when there is no direct path. The backend embeds a
+  TURN server (`Backend/src/turn/`, enabled by `TURN_EMBEDDED_PORT`) that `build-all.ps1 -Funnel` publishes on Funnel port 10000 (TLS)
+  — phones get the `turns:` URL, hosts get none (relay is on the host's machine). Unverified against real libwebrtc/SIPSorcery.
 - **Scaling decision** (measured, `Backend/scripts/loadtest.ts`): single instance; ~18k relayed frames/s at 500 sessions = 0.56 core/143 MB. No Redis/multi-instance. Design for later (route by hostId, Postgres) is in `Docs/ARCHITECTURE.md`.
 
 ## State at hand-off (be honest about it)
 
-Automated and green: Backend 95 tests · .NET 156 · Kotlin controller-core 110 (JVM) · cross-platform `Tests/` 40 scenarios · `tsc` clean · `npm audit` 0.
+Automated and green: Backend 104 tests · .NET 156 · Kotlin controller-core 110 (JVM) · cross-platform `Tests/` 40 scenarios · `tsc` clean · `npm audit` 0.
 **Never run on real hardware**: Win32 adapters (SendInput, clipboard, media keys, power, GDI capture, DPAPI), the WinForms UI (only compile-checked against reference assemblies), the whole Android app
 (compile-checked against android-all + libwebrtc API, except `ScanActivity`, which needs CameraX/ML Kit AARs), real VP8 encode/libwebrtc decode, TURN, real NAT traversal.
 `./gradlew assembleDebug` and `./gradlew test` were **never run** in the sandbox (Gradle plugin resolution was blocked). Expect first-build errors on the owner's PC. The owner started running
