@@ -130,6 +130,14 @@ destructive dialogs.
   to confirm in the authorize dialog (it used to keep showing the stale single-use QR); the dialog opens on top of
   it and is activated; rejection/connection loss end in a clear state with "new code". Written without a compiler
   or a Windows machine: **unverified on real hardware**, and the .NET suite could not be run in that session.
+- **Phone controls, batch 1 (Oct 2026)**: screen view renders into a TextureView (`ZoomableVideoView`, libwebrtc
+  `EglRenderer`) so two fingers pinch-zoom/pan the picture (`Viewport`, unit-tested) without moving the PC pointer;
+  full screen + landscape (also on rotating the phone); stream profiles Texto/Normal/Video/Ahorro (`StreamProfile`,
+  persisted); tap slop so a trembling finger still clicks; touchpad drag lock ("Arrastrar", `TouchpadEngine.setDragLock`,
+  unit-tested); shortcut grid (Ctrl+C/V/X/Z/Y/A/F/S, Alt+Tab, Alt+F4, Win+D/E, Win+Shift+S, Ctrl+Shift+Esc, Win, F11)
+  and F1–F12 via `InputClient.combo` (plain `input.key`, keyboard permission; no Ctrl+Alt+Supr/Win+L); a modifier +
+  navigation key bar fixed above the phone keyboard; haptic ticks on clicks and keys. controller-core tests ran green
+  (99) and the app compiled with kotlinc against android-all 14 + libwebrtc (ScanActivity stubbed); never run on a device.
 **Verified by**: wording/state logic is unit-tested (`LinkPresentationTest`, `StreamTextsTest`); both UIs compile.
 **Not verified**: appearance, layout at different DPIs/font scales, TalkBack/Narrator behaviour, performance, and every
 interaction on a real screen. Expect visual polish work once they are run.

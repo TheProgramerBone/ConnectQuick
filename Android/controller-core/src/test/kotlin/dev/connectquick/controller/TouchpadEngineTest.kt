@@ -241,4 +241,54 @@ class TouchpadEngineTest {
         assertTrue("sent ${r.moves() - base} messages for 40 events", r.moves() - base <= 8)
         assertTrue("distance ${r.sumDx}", r.sumDx in 78..82)
     }
+
+    @Test
+    fun drag_lock_holds_the_button_across_lifts_and_a_tap_releases_it() {
+        val (e, r) = engine()
+        val changes = mutableListOf<Boolean>()
+        e.onDragLockChanged = { changes += it }
+        e.setDragLock(true)
+        assertEquals(listOf("left-down"), r.buttons())
+        e.onTouch(ev(TouchAction.DOWN, 0, p(0, 0f, 0f)))
+        e.onTouch(ev(TouchAction.UP, e.drag(0, 0f, 0f, 100f, 0f, steps = 10) + 16))
+        assertEquals("a lift must not release a locked drag", listOf("left-down"), r.buttons())
+        assertTrue(r.sumDx > 0)
+        // A second stroke keeps dragging, and is not taken for a double-tap drag.
+        e.onTouch(ev(TouchAction.DOWN, 400, p(0, 0f, 0f)))
+        e.onTouch(ev(TouchAction.UP, e.drag(400, 0f, 0f, 0f, 50f, steps = 5) + 16))
+        assertEquals(listOf("left-down"), r.buttons())
+        assertTrue(e.dragLocked)
+        // Tap: let go.
+        e.onTouch(ev(TouchAction.DOWN, 1000, p(0, 10f, 10f)))
+        e.onTouch(ev(TouchAction.UP, 1050, p(0, 10f, 10f)).copy(pointers = emptyList()))
+        assertEquals(listOf("left-down", "left-up"), r.buttons())
+        assertFalse(e.dragLocked)
+        assertEquals(listOf(true, false), changes)
+    }
+
+    @Test
+    fun cancel_releases_a_locked_drag_and_reports_it() {
+        val (e, r) = engine()
+        var last: Boolean? = null
+        e.onDragLockChanged = { last = it }
+        e.setDragLock(true)
+        e.cancel()
+        assertEquals(listOf("left-down", "left-up"), r.buttons())
+        assertFalse(e.dragLocked)
+        assertEquals(false, last)
+    }
+
+    @Test
+    fun a_locked_drag_survives_a_two_finger_scroll() {
+        val (e, r) = engine()
+        e.setDragLock(true)
+        e.onTouch(ev(TouchAction.DOWN, 0, p(0, 0f, 0f)))
+        e.onTouch(ev(TouchAction.DOWN, 5, p(0, 0f, 0f), p(1, 40f, 0f)))
+        e.onTouch(ev(TouchAction.MOVE, 30, p(0, 0f, 60f), p(1, 40f, 60f)))
+        e.onTouch(ev(TouchAction.UP, 60, p(1, 40f, 60f)))
+        e.onTouch(ev(TouchAction.UP, 70))
+        assertEquals(listOf("left-down"), r.buttons())
+        assertTrue(r.wheelY != 0)
+        assertTrue(e.dragLocked)
+    }
 }

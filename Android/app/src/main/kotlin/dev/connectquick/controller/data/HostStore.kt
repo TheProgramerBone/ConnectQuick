@@ -34,6 +34,13 @@ class HostStore(context: Context) {
         prefs.edit().putFloat(KEY_SENS, config.sensitivity).putBoolean(KEY_NATURAL, config.naturalScroll).apply()
     }
 
+    /** Last stream profile chosen on the screen view (enum name), or null for the default. */
+    fun streamProfile(): String? = prefs.getString(KEY_PROFILE, null)
+
+    fun saveStreamProfile(name: String) {
+        prefs.edit().putString(KEY_PROFILE, name).apply()
+    }
+
     /** "Light" theme preference; dark is the default. */
     fun lightTheme(): Boolean = prefs.getBoolean(KEY_LIGHT, false)
 
@@ -43,6 +50,7 @@ class HostStore(context: Context) {
 
     private companion object {
         const val KEY_LIGHT = "theme_light"
+        const val KEY_PROFILE = "stream_profile"
         const val KEY_HOST = "paired_host"
         const val KEY_SENS = "touchpad_sensitivity"
         const val KEY_NATURAL = "touchpad_natural_scroll"

@@ -170,6 +170,19 @@ object Ui {
             children.forEach { addView(it, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)) }
         }
 
+    /** A short tick for clicks and key presses. Uses the system haptics setting; needs no permission. */
+    fun haptic(v: View, strong: Boolean = false) {
+        v.performHapticFeedback(if (strong) android.view.HapticFeedbackConstants.LONG_PRESS else android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+    }
+
+    /** A compact button for dense key rows. */
+    fun key(ctx: Context, text: CharSequence, onClick: (View) -> Unit): Button = button(ctx, text) { v -> haptic(v); onClick(v) }.apply {
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        minimumWidth = dp(ctx, 48)
+        minWidth = dp(ctx, 48)
+        setPadding(dp(ctx, 10), dp(ctx, 4), dp(ctx, 10), dp(ctx, 4))
+    }
+
     fun spacer(ctx: Context, heightDp: Int): View = View(ctx).apply { layoutParams = LinearLayout.LayoutParams(1, dp(ctx, heightDp)) }
 
     fun lp(ctx: Context, top: Int = 0, bottom: Int = 0): LinearLayout.LayoutParams =

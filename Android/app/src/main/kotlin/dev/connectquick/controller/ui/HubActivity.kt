@@ -39,12 +39,24 @@ abstract class HubActivity : Activity() {
             setPadding(pad, pad, pad, pad)
         }
         if (scrolling) {
-            setContentView(ScrollView(this).apply {
+            val scroll = ScrollView(this).apply {
                 isFillViewport = true
                 clipToPadding = false
-                fitsSystemWindows = true
                 addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            })
+            }
+            val bar = createBottomBar()
+            if (bar == null) {
+                scroll.fitsSystemWindows = true
+                setContentView(scroll)
+            } else {
+                // The bar sits outside the scrolling column, so with adjustResize it rides right above the phone's keyboard.
+                setContentView(LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    fitsSystemWindows = true
+                    addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+                    addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+                })
+            }
         } else {
             content.fitsSystemWindows = true
             setContentView(content)
@@ -52,6 +64,9 @@ abstract class HubActivity : Activity() {
         onCreated(savedInstanceState)
         rebuildIfNeeded()
     }
+
+    /** A strip fixed under the scrolling column (scrolling screens only), or null for none. */
+    protected open fun createBottomBar(): View? = null
 
     /** Hook after the shell exists; build static views here only if they do not depend on the paired PC. */
     protected open fun onCreated(savedInstanceState: Bundle?) {}

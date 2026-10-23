@@ -83,6 +83,23 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
 
     val isDragging: Boolean get() = leftHeld
 
+    /**
+     * "Bloquear arrastre": the left button stays held across finger lifts, so long selections and
+     * drags need no finger kept on the glass. A tap ends it (releasing the button), as does [cancel].
+     */
+    var dragLocked = false
+        private set
+    var onDragLockChanged: ((Boolean) -> Unit)? = null
+
+    fun setDragLock(on: Boolean) {
+        if (on == dragLocked) return
+        flushMove()
+        if (on && !leftHeld) { sink.mouseButton(MouseButton.LEFT, true); leftHeld = true }
+        if (!on && leftHeld) { sink.mouseButton(MouseButton.LEFT, false); leftHeld = false }
+        dragLocked = on
+        onDragLockChanged?.invoke(on)
+    }
+
     fun onTouch(e: TouchEvent) {
         when (e.action) {
             TouchAction.DOWN -> onDown(e)
@@ -98,6 +115,10 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
         if (leftHeld) {
             sink.mouseButton(MouseButton.LEFT, false)
             leftHeld = false
+        }
+        if (dragLocked) {
+            dragLocked = false
+            onDragLockChanged?.invoke(false)
         }
         mode = Mode.IDLE
         candidateDoubleTap = false
@@ -120,13 +141,14 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
             lastX = p.x; lastY = p.y; lastTimeMs = e.timeMs
             travelled = false
             lastFlushMs = e.timeMs - config.minMoveIntervalMs - 1 // first motion of a gesture goes out immediately
-            candidateDoubleTap = lastTapUpMs != NO_TAP && e.timeMs - lastTapUpMs <= config.doubleTapWindowMs
+            candidateDoubleTap = !dragLocked && lastTapUpMs != NO_TAP && e.timeMs - lastTapUpMs <= config.doubleTapWindowMs
             mode = Mode.POINTING
         } else if (n == 2) {
             // A second finger turns whatever was happening into a two-finger gesture. Any pending
             // pointer motion is flushed first so nothing is lost, and the pointer stays put from now on.
             flushMove()
-            if (leftHeld) { sink.mouseButton(MouseButton.LEFT, false); leftHeld = false }
+            // A locked drag survives a two-finger scroll (dragging to the edge of a long list).
+            if (leftHeld && !dragLocked) { sink.mouseButton(MouseButton.LEFT, false); leftHeld = false }
             candidateDoubleTap = false
             mode = Mode.TWO_FINGER_PENDING
             twoStartMs = e.timeMs
@@ -223,7 +245,11 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
             Mode.POINTING -> {
                 flushMove(e.timeMs)
                 val quick = e.timeMs - downTimeMs <= config.tapMaxMs
-                if (!travelled && quick) {
+                if (dragLocked) {
+                    // While locked a lift keeps holding; a tap is how the person lets go.
+                    if (!travelled && quick) setDragLock(false)
+                    lastTapUpMs = NO_TAP
+                } else if (!travelled && quick) {
                     // Tap => click. A tap soon after a previous tap is just the second click of a double-click.
                     sink.mouseButton(MouseButton.LEFT, true)
                     sink.mouseButton(MouseButton.LEFT, false)

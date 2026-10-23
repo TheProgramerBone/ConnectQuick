@@ -52,6 +52,12 @@ class InputClient(private val port: SessionPort) : InputSink {
         key(code, false)
     }
 
+    /** Presses [keys] in order and releases them in reverse, like a person holding a shortcut. */
+    fun combo(keys: List<String>) {
+        keys.forEach { key(it, true) }
+        keys.asReversed().forEach { key(it, false) }
+    }
+
     /** Types text as-is (Unicode). Long text is split to respect the 256-character message limit. */
     fun typeText(text: String) {
         var i = 0

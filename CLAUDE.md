@@ -38,7 +38,7 @@ Docs/         STATUS, ARCHITECTURE, SECURITY, GUIA_DE_PRUEBAS, COMPILAR_Y_CONFIR
 
 ## State at hand-off (be honest about it)
 
-Automated and green: Backend 95 tests · .NET 156 · Kotlin controller-core 89 (JVM) · cross-platform `Tests/` 40 scenarios · `tsc` clean · `npm audit` 0.
+Automated and green: Backend 95 tests · .NET 156 · Kotlin controller-core 99 (JVM) · cross-platform `Tests/` 40 scenarios · `tsc` clean · `npm audit` 0.
 **Never run on real hardware**: Win32 adapters (SendInput, clipboard, media keys, power, GDI capture, DPAPI), the WinForms UI (only compile-checked against reference assemblies), the whole Android app
 (compile-checked against android-all + libwebrtc API, except `ScanActivity`, which needs CameraX/ML Kit AARs), real VP8 encode/libwebrtc decode, TURN, real NAT traversal.
 `./gradlew assembleDebug` and `./gradlew test` were **never run** in the sandbox (Gradle plugin resolution was blocked). Expect first-build errors on the owner's PC. The owner started running
@@ -61,7 +61,11 @@ Run suites **one at a time**: the multi-process scenarios are timing-sensitive o
 - Compile + run the Kotlin core with `kotlinc` (embeddable compiler 1.9.24 + serialization plugin jar) directly, JUnit via `JUnitCore`, copying `Protocol/schemas/*.json` onto the classpath.
 - Compile-check the WinForms project as a plain `net8.0` library referencing the WindowsDesktop **reference assemblies** from the NuGet cache (plus a stub `ApplicationConfiguration`).
 - Compile-check the Android app with `kotlinc` against `android-all-14-robolectric` and the `io.getstream:stream-webrtc-android:1.3.8` AAR's `classes.jar` (stub `ScanActivity`).
-- Maven Central was reachable through the proxy (use retry loops; transient 404s occurred).
+- Maven Central was reachable through the proxy (use retry loops; transient 404s/429s occurred).
+- Oct 2026: `gradle -p controller-core test` (system Gradle 8.14) works in the cloud sandbox once `Backend/` has `npm install`
+  (the pairing E2E test starts the real backend). The Kotlin compiler jars it caches under `~/.gradle/caches` can then compile-check
+  the app with `K2JVMCompiler` against `org.robolectric:android-all:14-robolectric-10818077` + the webrtc AAR `classes.jar`.
+  `dotnet` is NOT available there (download host blocked), so C# changes cannot be compiled in that sandbox.
 
 ## Conventions and decisions worth keeping
 

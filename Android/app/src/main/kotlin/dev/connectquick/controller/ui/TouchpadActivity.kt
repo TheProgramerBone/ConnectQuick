@@ -10,11 +10,15 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import dev.connectquick.controller.connectQuick
 import dev.connectquick.controller.input.InputClient
+import dev.connectquick.controller.input.InputSink
+import dev.connectquick.controller.input.Shortcut
+import dev.connectquick.controller.input.Shortcuts
 import dev.connectquick.controller.input.MouseButton
 import dev.connectquick.controller.input.TouchAction
 import dev.connectquick.controller.input.TouchEvent
@@ -41,7 +45,7 @@ class TouchSurface(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         hintPaint.textSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 15f, resources.displayMetrics)
-        val lines = if (enabledForInput) listOf("Un dedo: mover", "Toque: clic · dos dedos: clic derecho", "Dos dedos deslizando: desplazar", "Toca y arrastra: seleccionar")
+        val lines = if (enabledForInput) listOf("Un dedo: mover", "Toque: clic · dos dedos: clic derecho", "Dos dedos deslizando: desplazar", "Toque y arrastre, o «Arrastrar»: seleccionar")
         else listOf("Sin conexión con el PC", "El touchpad se activa al conectar")
         val lh = hintPaint.fontSpacing
         var y = height / 2f - lh * (lines.size - 1) / 2f
@@ -64,7 +68,7 @@ class TouchSurface(context: Context) : View(context) {
     }
 }
 
-/** Touchpad + keyboard: pointer, click buttons, typing, and the keys a touch keyboard does not have. */
+/** Touchpad + keyboard: pointer, click buttons, drag lock, typing, shortcuts and the keys a touch keyboard does not have. */
 class TouchpadActivity : HubActivity() {
     private var banner: Banner? = null
     private var surface: TouchSurface? = null
@@ -74,13 +78,39 @@ class TouchpadActivity : HubActivity() {
     private val heldModifiers = mutableSetOf<String>()
     private val modifierButtons = mutableMapOf<String, android.widget.Button>()
     private var typing: EditText? = null
-    private var keyRow: LinearLayout? = null
-    private var modRow: LinearLayout? = null
+    private var keyBar: View? = null
+    private var shortcutsView: View? = null
     private var clickRow: LinearLayout? = null
+    private var dragButton: android.widget.Button? = null
     private var buildOpenKeyboard = false
 
     override fun onCreated(savedInstanceState: Bundle?) {
         buildOpenKeyboard = intent.getBooleanExtra(EXTRA_OPEN_KEYBOARD, false)
+    }
+
+    /**
+     * Modifiers and navigation keys in one strip fixed at the bottom: with the phone's keyboard open it
+     * sits right on top of it, so Ctrl/Alt/arrows are one tap away while typing.
+     */
+    override fun createBottomBar(): View {
+        val ctx = this
+        val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 6), Ui.dp(ctx, 8), Ui.dp(ctx, 6)) }
+        fun add(b: android.widget.Button) = row.addView(b, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = Ui.dp(ctx, 6) })
+        sticky.forEach { (code, label) ->
+            val b = Ui.key(ctx, label) { v -> toggleModifier(code, v as android.widget.Button) }.apply { contentDescription = "Modificador $label: mantener pulsada en el PC" }
+            modifierButtons[code] = b
+            add(b)
+        }
+        (Shortcuts.keyBar + listOf("⌫" to "Backspace", "↵" to "Enter")).forEach { (label, code) ->
+            add(Ui.key(ctx, label) { hub?.input?.tapKey(code) }.apply { contentDescription = "Tecla $label" })
+        }
+        val bar = HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
+            background = Ui.glass(ctx, 0, 46)
+            addView(row)
+        }
+        keyBar = bar
+        return bar
     }
 
     override fun buildContent(hub: ControllerHub?) {
@@ -97,17 +127,25 @@ class TouchpadActivity : HubActivity() {
         fun mouseButton(label: String, button: MouseButton) = Ui.button(ctx, label) { }.apply {
             // Hold-to-press so drag and long-press work: down on touch, up on release.
             setOnTouchListener { v, ev ->
-                val input = hub?.input
+                val input = this@TouchpadActivity.hub?.input
                 when (ev.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { input?.mouseButton(button, true); v.isPressed = true }
+                    MotionEvent.ACTION_DOWN -> { input?.mouseButton(button, true); v.isPressed = true; Ui.haptic(v) }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { input?.mouseButton(button, false); v.isPressed = false }
                 }
                 true
             }
             contentDescription = "Botón $label del ratón"
         }
-        clicks.addView(mouseButton("Clic izquierdo", MouseButton.LEFT), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = Ui.dp(ctx, 6) })
-        clicks.addView(mouseButton("Clic derecho", MouseButton.RIGHT), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = Ui.dp(ctx, 6) })
+        val drag = Ui.button(ctx, "Arrastrar") { v ->
+            val e = engine ?: return@button
+            Ui.haptic(v, strong = true)
+            e.setDragLock(!e.dragLocked)
+        }.apply { contentDescription = "Bloquear arrastre: mantiene pulsado el clic izquierdo hasta que toques la superficie" }
+        dragButton = drag
+        listOf(mouseButton("Izquierdo", MouseButton.LEFT), drag, mouseButton("Derecho", MouseButton.RIGHT)).forEachIndexed { i, b ->
+            b.setPadding(Ui.dp(ctx, 6), 0, Ui.dp(ctx, 6), 0)
+            clicks.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { if (i > 0) marginStart = Ui.dp(ctx, 6) })
+        }
         content.addView(clicks, Ui.lp(ctx, bottom = 12))
 
         // Sensitivity (persisted) and scroll direction.
@@ -135,7 +173,7 @@ class TouchpadActivity : HubActivity() {
         }
         content.addView(Ui.card(ctx, Ui.label(ctx, "Velocidad del puntero", 14f, Ui.DIM), sens, Ui.spacer(ctx, 8), natural), Ui.lp(ctx, bottom = 16))
 
-        // Keyboard: free text + the keys a touch keyboard lacks.
+        // Keyboard: free text; modifiers and navigation keys live in the bar at the bottom.
         content.addView(Ui.heading(ctx, "Teclado"), Ui.lp(ctx, bottom = 8))
         val field = EditText(ctx).apply {
             hint = "Escribe aquí y se teclea en el PC"
@@ -164,34 +202,42 @@ class TouchpadActivity : HubActivity() {
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
-        content.addView(field, Ui.lp(ctx, bottom = 10))
+        content.addView(field, Ui.lp(ctx, bottom = 6))
+        content.addView(Ui.dim(ctx, "Ctrl, Alt, Shift y Win se quedan pulsadas hasta que las sueltas abajo, y se sueltan solas si sales de esta pantalla o se pierde la conexión."), Ui.lp(ctx, bottom = 14))
 
-        val mods = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        modRow = mods
-        sticky.forEach { (code, label) ->
-            val b = Ui.button(ctx, label) { v -> toggleModifier(code, v as android.widget.Button) }.apply { contentDescription = "Modificador $label: mantener pulsada en el PC" }
-            modifierButtons[code] = b
-            mods.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = Ui.dp(ctx, 4); marginStart = Ui.dp(ctx, 4) })
+        // Shortcuts and function keys: fixed key combinations, never commands.
+        val shortcuts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        shortcutsView = shortcuts
+        shortcuts.addView(Ui.heading(ctx, "Atajos"), Ui.lp(ctx, bottom = 8))
+        shortcuts.addView(grid(Shortcuts.editing, 4), Ui.lp(ctx, bottom = 8))
+        shortcuts.addView(grid(Shortcuts.windows, 4), Ui.lp(ctx, bottom = 12))
+        shortcuts.addView(Ui.heading(ctx, "Teclas de función"), Ui.lp(ctx, bottom = 8))
+        val fRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        Shortcuts.functionKeys.forEach { code ->
+            fRow.addView(Ui.key(ctx, code) { hub?.input?.tapKey(code) }.apply { contentDescription = "Tecla $code" },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = Ui.dp(ctx, 6) })
         }
-        content.addView(mods, Ui.lp(ctx, bottom = 8))
+        shortcuts.addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(fRow) }, Ui.lp(ctx, bottom = 12))
+        content.addView(shortcuts, Ui.lp(ctx, bottom = 8))
+    }
 
-        val keys = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        keyRow = keys
-        listOf(
-            listOf("Esc" to "Escape", "Tab" to "Tab", "Supr" to "Delete", "⌫" to "Backspace", "↵" to "Enter"),
-            listOf("←" to "ArrowLeft", "↑" to "ArrowUp", "↓" to "ArrowDown", "→" to "ArrowRight", "Inicio" to "Home", "Fin" to "End"),
-        ).forEach { rowKeys ->
+    /** Shortcut buttons, [columns] per row. With a modifier held below, a shortcut adds to it (e.g. Shift + Alt+Tab). */
+    private fun grid(items: List<Shortcut>, columns: Int): View {
+        val ctx = this
+        val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        items.chunked(columns).forEach { chunk ->
             val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-            rowKeys.forEach { (label, code) ->
-                row.addView(Ui.button(ctx, label) { hub?.input?.tapKey(code) }.apply {
-                    contentDescription = "Tecla $label"
-                    setPadding(Ui.dp(ctx, 4), 0, Ui.dp(ctx, 4), 0)
-                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = Ui.dp(ctx, 3); marginStart = Ui.dp(ctx, 3) })
+            chunk.forEachIndexed { i, sc ->
+                val b = Ui.key(ctx, sc.label) { hub?.input?.combo(sc.keys) }.apply {
+                    contentDescription = "${sc.label}: ${sc.description}"
+                    textSize = 13f
+                }
+                row.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { if (i > 0) marginStart = Ui.dp(ctx, 6) })
             }
-            keys.addView(row, Ui.lp(ctx, bottom = 6))
+            repeat(columns - chunk.size) { row.addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f).apply { marginStart = Ui.dp(ctx, 6) }) }
+            box.addView(row, Ui.lp(ctx, bottom = 6))
         }
-        content.addView(keys, Ui.lp(ctx, bottom = 8))
-        content.addView(Ui.dim(ctx, "Los modificadores se mantienen hasta que los sueltas aquí, y se sueltan solos si sales de esta pantalla o se pierde la conexión."), Ui.lp(ctx, bottom = 12))
+        return box
     }
 
     private fun commonPrefix(a: String, b: String): Int {
@@ -200,24 +246,45 @@ class TouchpadActivity : HubActivity() {
         return i
     }
 
+    private fun styleOn(button: android.widget.Button, on: Boolean) {
+        button.background = if (on) {
+            Ui.ripple(this, android.graphics.drawable.GradientDrawable().apply { cornerRadius = Ui.dpf(this@TouchpadActivity, 16f); setColor(Ui.ACCENT_FILL) })
+        } else {
+            Ui.ripple(this, Ui.glass(this, 16, 40))
+        }
+        button.setTextColor(if (on) android.graphics.Color.WHITE else Ui.TEXT)
+    }
+
     private fun toggleModifier(code: String, button: android.widget.Button) {
         val input = hub?.input ?: return
         if (heldModifiers.remove(code)) {
             input.key(code, false)
-            button.background = Ui.ripple(this, Ui.glass(this, 16, 40))
+            styleOn(button, false)
         } else {
             heldModifiers.add(code)
             input.key(code, true)
-            button.background = Ui.ripple(this, android.graphics.drawable.GradientDrawable().apply { cornerRadius = Ui.dpf(this@TouchpadActivity, 16f); setColor(Ui.ACCENT_FILL) })
+            styleOn(button, true)
         }
         button.contentDescription = "Modificador ${sticky[code]}: " + if (code in heldModifiers) "activado" else "desactivado"
     }
 
+    private fun clearModifierButtons() {
+        heldModifiers.clear()
+        modifierButtons.forEach { (_, b) -> styleOn(b, false) }
+    }
+
     private fun releaseEverything() {
         engine?.cancel()
-        heldModifiers.clear()
-        modifierButtons.forEach { (_, b) -> b.background = Ui.ripple(this, Ui.glass(this, 16, 40)) }
+        clearModifierButtons()
         hub?.input?.releaseAll()
+    }
+
+    /** Engine sink that adds a haptic tick to every click the touch surface produces. */
+    private inner class HapticSink(private val input: InputClient) : InputSink by input {
+        override fun mouseButton(button: MouseButton, down: Boolean) {
+            input.mouseButton(button, down)
+            if (down) surface?.let { Ui.haptic(it) }
+        }
     }
 
     override fun render() {
@@ -228,18 +295,17 @@ class TouchpadActivity : HubActivity() {
         surface?.enabledForInput = can
         clickRow?.alpha = if (can) 1f else 0.5f
         typing?.isEnabled = canKeys
-        modRow?.alpha = if (canKeys) 1f else 0.5f
-        keyRow?.alpha = if (canKeys) 1f else 0.5f
+        keyBar?.alpha = if (canKeys) 1f else 0.5f
+        shortcutsView?.alpha = if (canKeys) 1f else 0.5f
         val input = h.input
         if (input !== engineFor) {
             engine?.cancel()
             engineFor = input
-            engine = input?.let { TouchpadEngine(it, connectQuick.store.touchpad()) }
+            engine = input?.let { TouchpadEngine(HapticSink(it), connectQuick.store.touchpad()) }
+            engine?.onDragLockChanged = { on -> dragButton?.let { styleOn(it, on); it.text = if (on) "Soltar" else "Arrastrar" } }
+            dragButton?.let { styleOn(it, false); it.text = "Arrastrar" }
             surface?.engine = engine
-            if (input == null && heldModifiers.isNotEmpty()) {
-                heldModifiers.clear()
-                modifierButtons.forEach { (_, b) -> b.background = Ui.ripple(this, Ui.glass(this, 16, 40)) }
-            }
+            if (input == null && heldModifiers.isNotEmpty()) clearModifierButtons()
         }
         if (buildOpenKeyboard && canKeys) {
             buildOpenKeyboard = false
