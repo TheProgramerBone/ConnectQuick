@@ -88,8 +88,8 @@ class ShortcutsAndProfilesTest {
         }
         assertTrue(StreamProfile.TEXT.request.maxFps < StreamProfile.VIDEO.request.maxFps)
         assertTrue(StreamProfile.TEXT.request.maxWidth >= StreamProfile.NORMAL.request.maxWidth)
-        assertEquals(StreamProfile.TEXT, StreamProfile.SAVER.next())
-        assertEquals(StreamProfile.NORMAL, StreamProfile.fromName("nonsense"))
+        assertEquals(StreamProfile.AUTO, StreamProfile.SAVER.next())
+        assertEquals(StreamProfile.AUTO, StreamProfile.fromName("nonsense"))
         assertEquals(StreamProfile.VIDEO, StreamProfile.fromName("VIDEO"))
     }
 }

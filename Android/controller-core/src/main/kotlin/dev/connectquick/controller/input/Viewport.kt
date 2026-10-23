@@ -50,6 +50,24 @@ class Viewport(val maxScale: Float = 5f) {
         return (cx / width).coerceIn(0f, 1f) to (cy / height).coerceIn(0f, 1f)
     }
 
+    /**
+     * Pans the least needed so the content point at fractions ([fx], [fy]) is inside the view with a
+     * [margin] px border (keeps a virtual pointer on screen while zoomed). Returns true if it moved.
+     */
+    fun ensureVisible(fx: Float, fy: Float, margin: Float = 24f): Boolean {
+        if (!isZoomed) return false
+        val sx = fx * width * scale + offsetX
+        val sy = fy * height * scale + offsetY
+        val m = minOf(margin, width / 4f, height / 4f)
+        var dx = 0f
+        var dy = 0f
+        if (sx < m) dx = m - sx else if (sx > width - m) dx = width - m - sx
+        if (sy < m) dy = m - sy else if (sy > height - m) dy = height - m - sy
+        if (dx == 0f && dy == 0f) return false
+        panBy(dx, dy)
+        return true
+    }
+
     private fun clamp() {
         offsetX = offsetX.coerceIn(minOf(0f, width * (1 - scale)), 0f)
         offsetY = offsetY.coerceIn(minOf(0f, height * (1 - scale)), 0f)

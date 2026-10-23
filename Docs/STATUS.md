@@ -138,6 +138,17 @@ destructive dialogs.
   and F1–F12 via `InputClient.combo` (plain `input.key`, keyboard permission; no Ctrl+Alt+Supr/Win+L); a modifier +
   navigation key bar fixed above the phone keyboard; haptic ticks on clicks and keys. controller-core tests ran green
   (99) and the app compiled with kotlinc against android-all 14 + libwebrtc (ScanActivity stubbed); never run on a device.
+- **Phone controls, batches 2–3 (Oct 2026)**: touchpad gestures — three-finger swipes (up Win+Tab, down Win+D,
+  right Alt+Tab, left Alt+Shift+Tab), three-finger tap = middle click, two-finger pinch = Ctrl+wheel zoom on the PC
+  (Ctrl always released on lift/cancel); separate acceleration and scroll-speed sliders; "type what I copied" (phone
+  clipboard → `input.text`, capped at 4000 chars). Screen view: "Touchpad" input mode with a pointer the phone tracks
+  (`VirtualPointer`, absolute moves) and draws itself immediately (hides video latency), finer when zoomed, viewport
+  follows it; "Auto" profile (`AutoQuality`: metered → Ahorro, else Video; steps down after 3 stats with RTT ≥ 250 ms,
+  never back up mid-stream) and "Juego" 1280×720@60 with 4 ms pointer flush (also when RTT < 40 ms); screenshot of the
+  next frame to Pictures/ConnectQuick. Host default `MaxStreamFps` raised to 60 (ceiling only; existing settings.json
+  keep their value). controller-core 110 tests green; app compile-checked; nothing run on a device.
+  **Not done** (need host-side C# that cannot be compiled or run in the cloud sandbox): input over a direct WebRTC
+  DataChannel, monitor selection, desktop audio.
 **Verified by**: wording/state logic is unit-tested (`LinkPresentationTest`, `StreamTextsTest`); both UIs compile.
 **Not verified**: appearance, layout at different DPIs/font scales, TalkBack/Narrator behaviour, performance, and every
 interaction on a real screen. Expect visual polish work once they are run.

@@ -45,7 +45,7 @@ class TouchSurface(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         hintPaint.textSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 15f, resources.displayMetrics)
-        val lines = if (enabledForInput) listOf("Un dedo: mover", "Toque: clic · dos dedos: clic derecho", "Dos dedos deslizando: desplazar", "Toque y arrastre, o «Arrastrar»: seleccionar")
+        val lines = if (enabledForInput) listOf("Un dedo: mover · toque: clic", "Dos dedos: desplazar · toque: clic derecho", "Pellizcar: zoom en el PC", "Tres dedos: cambiar de app, escritorio, tareas", "Toque y arrastre, o «Arrastrar»: seleccionar")
         else listOf("Sin conexión con el PC", "El touchpad se activa al conectar")
         val lh = hintPaint.fontSpacing
         var y = height / 2f - lh * (lines.size - 1) / 2f
@@ -171,7 +171,40 @@ class TouchpadActivity : HubActivity() {
             connectQuick.store.saveTouchpad(next)
             (v as android.widget.Button).text = if (next.naturalScroll) "Desplazamiento natural: sí" else "Desplazamiento natural: no"
         }
-        content.addView(Ui.card(ctx, Ui.label(ctx, "Velocidad del puntero", 14f, Ui.DIM), sens, Ui.spacer(ctx, 8), natural), Ui.lp(ctx, bottom = 16))
+        // Scroll speed (finger travel per wheel notch, inverted so right = faster) and pointer acceleration.
+        val scroll = SeekBar(ctx).apply {
+            max = 84
+            progress = (96 - config.scrollPixelsPerNotch).toInt().coerceIn(0, 84)
+            contentDescription = "Velocidad del desplazamiento"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                    val cfg = (engine?.config ?: connectQuick.store.touchpad()).copy(scrollPixelsPerNotch = 96f - p)
+                    engine?.config = cfg
+                    if (fromUser) connectQuick.store.saveTouchpad(cfg)
+                }
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
+            })
+        }
+        val accel = SeekBar(ctx).apply {
+            max = 15
+            progress = (config.acceleration * 10).toInt().coerceIn(0, 15)
+            contentDescription = "Aceleración del puntero"
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                    val cfg = (engine?.config ?: connectQuick.store.touchpad()).copy(acceleration = p / 10f)
+                    engine?.config = cfg
+                    if (fromUser) connectQuick.store.saveTouchpad(cfg)
+                }
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
+            })
+        }
+        content.addView(Ui.card(ctx,
+            Ui.label(ctx, "Velocidad del puntero", 14f, Ui.DIM), sens,
+            Ui.label(ctx, "Aceleración (más rápido al deslizar deprisa)", 14f, Ui.DIM), accel,
+            Ui.label(ctx, "Velocidad del desplazamiento", 14f, Ui.DIM), scroll,
+            Ui.spacer(ctx, 8), natural), Ui.lp(ctx, bottom = 16))
 
         // Keyboard: free text; modifiers and navigation keys live in the bar at the bottom.
         content.addView(Ui.heading(ctx, "Teclado"), Ui.lp(ctx, bottom = 8))
@@ -203,6 +236,20 @@ class TouchpadActivity : HubActivity() {
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
         content.addView(field, Ui.lp(ctx, bottom = 6))
+        // Long text (a link, an address, a paragraph): type what the phone has copied, in one go.
+        content.addView(Ui.button(ctx, "Escribir en el PC lo que copié en el teléfono") { v ->
+            val input = hub?.input ?: return@button
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
+            if (text.isEmpty()) { toast("No hay texto copiado en el teléfono"); return@button }
+            val clean = text.take(MAX_PASTE).replace("\r\n", "\n")
+            Ui.haptic(v)
+            clean.split('\n').forEachIndexed { i, line ->
+                if (i > 0) input.tapKey("Enter")
+                if (line.isNotEmpty()) input.typeText(line)
+            }
+            toast(if (text.length > MAX_PASTE) "Escritos $MAX_PASTE de ${text.length} caracteres" else "Escritos ${clean.length} caracteres")
+        }.apply { contentDescription = "Teclea en el PC el texto copiado en el portapapeles del teléfono" }, Ui.lp(ctx, bottom = 6))
         content.addView(Ui.dim(ctx, "Ctrl, Alt, Shift y Win se quedan pulsadas hasta que las sueltas abajo, y se sueltan solas si sales de esta pantalla o se pierde la conexión."), Ui.lp(ctx, bottom = 14))
 
         // Shortcuts and function keys: fixed key combinations, never commands.
@@ -303,6 +350,12 @@ class TouchpadActivity : HubActivity() {
             engineFor = input
             engine = input?.let { TouchpadEngine(HapticSink(it), connectQuick.store.touchpad()) }
             engine?.onDragLockChanged = { on -> dragButton?.let { styleOn(it, on); it.text = if (on) "Soltar" else "Arrastrar" } }
+            engine?.onGesture = { g ->
+                val sc = Shortcuts.forGesture(g)
+                input?.combo(sc.keys)
+                surface?.let { Ui.haptic(it, strong = true) }
+                toast(sc.label)
+            }
             dragButton?.let { styleOn(it, false); it.text = "Arrastrar" }
             surface?.engine = engine
             if (input == null && heldModifiers.isNotEmpty()) clearModifierButtons()
@@ -320,5 +373,9 @@ class TouchpadActivity : HubActivity() {
         super.onPause()
     }
 
-    companion object { const val EXTRA_OPEN_KEYBOARD = "open_keyboard" }
+    companion object {
+        const val EXTRA_OPEN_KEYBOARD = "open_keyboard"
+        /** Typing is ~1 message per 256 chars; this keeps a paste well under the PC's rate limit. */
+        const val MAX_PASTE = 4000
+    }
 }

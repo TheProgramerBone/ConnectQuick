@@ -31,6 +31,14 @@ object Shortcuts {
         Shortcut("Pantalla completa", "F11", listOf("F11")),
     )
 
+    /** Windows touchpad conventions: up = Task View, down = desktop, sideways = switch app. */
+    fun forGesture(g: TouchGesture): Shortcut = when (g) {
+        TouchGesture.SWIPE_UP -> Shortcut("Vista de tareas", "Win+Tab", listOf("MetaLeft", "Tab"))
+        TouchGesture.SWIPE_DOWN -> Shortcut("Escritorio", "Win+D", listOf("MetaLeft", "KeyD"))
+        TouchGesture.SWIPE_RIGHT -> Shortcut("Siguiente app", "Alt+Tab", listOf("AltLeft", "Tab"))
+        TouchGesture.SWIPE_LEFT -> Shortcut("App anterior", "Alt+Shift+Tab", listOf("AltLeft", "ShiftLeft", "Tab"))
+    }
+
     val functionKeys: List<String> = (1..12).map { "F$it" }
 
     /** The keys of the bar shown right above the phone's keyboard. Label to code. */

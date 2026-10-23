@@ -41,7 +41,7 @@ public sealed class HostSettings
 
     public int MaxStreamWidth { get; set; } = 1920;
     public int MaxStreamHeight { get; set; } = 1080;
-    public int MaxStreamFps { get; set; } = 30;
+    public int MaxStreamFps { get; set; } = 60; // ceiling only: the phone asks for 30 unless it chose the 60 fps "Juego" profile
     public int MaxStreamBitrateKbps { get; set; } = 8000;
 
     public string DefaultInbox() =>

@@ -11,6 +11,8 @@ interface InputSink {
     fun mouseButton(button: MouseButton, down: Boolean)
     /** Wheel deltas in 1/120 notch units (positive: up / right), as `input.mouse_wheel` defines them. */
     fun wheel(dx: Int, dy: Int)
+    /** Key down/up (W3C code). Only gestures that map to a key (pinch = Ctrl+wheel) use it; default: ignored. */
+    fun key(code: String, down: Boolean) {}
 }
 
 /**
@@ -43,7 +45,7 @@ class InputClient(private val port: SessionPort) : InputSink {
         mouseButton(button, false)
     }
 
-    fun key(code: String, down: Boolean) {
+    override fun key(code: String, down: Boolean) {
         port.send("input.key") { put("code", code); put("down", down) }
     }
 

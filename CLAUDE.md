@@ -38,7 +38,7 @@ Docs/         STATUS, ARCHITECTURE, SECURITY, GUIA_DE_PRUEBAS, COMPILAR_Y_CONFIR
 
 ## State at hand-off (be honest about it)
 
-Automated and green: Backend 95 tests · .NET 156 · Kotlin controller-core 99 (JVM) · cross-platform `Tests/` 40 scenarios · `tsc` clean · `npm audit` 0.
+Automated and green: Backend 95 tests · .NET 156 · Kotlin controller-core 110 (JVM) · cross-platform `Tests/` 40 scenarios · `tsc` clean · `npm audit` 0.
 **Never run on real hardware**: Win32 adapters (SendInput, clipboard, media keys, power, GDI capture, DPAPI), the WinForms UI (only compile-checked against reference assemblies), the whole Android app
 (compile-checked against android-all + libwebrtc API, except `ScanActivity`, which needs CameraX/ML Kit AARs), real VP8 encode/libwebrtc decode, TURN, real NAT traversal.
 `./gradlew assembleDebug` and `./gradlew test` were **never run** in the sandbox (Gradle plugin resolution was blocked). Expect first-build errors on the owner's PC. The owner started running

@@ -51,6 +51,17 @@ class ZoomableVideoView(context: Context, eglContext: EglBase.Context) : Texture
         renderer.onFrame(frame)
     }
 
+    /**
+     * Grabs the next frame as a bitmap (full video resolution, not the zoomed view). Calls back on the
+     * main thread with null if no frame arrives within two seconds (stream paused or not started).
+     */
+    fun capture(onBitmap: (android.graphics.Bitmap?) -> Unit) {
+        var done = false
+        val timeout = Runnable { if (!done) { done = true; onBitmap(null) } }
+        main.postDelayed(timeout, 2000)
+        renderer.addFrameListener({ bmp -> main.post { if (!done) { done = true; main.removeCallbacks(timeout); onBitmap(bmp) } } }, 1f)
+    }
+
     fun applyViewport() {
         viewport.setSize(width.toFloat(), height.toFloat())
         setTransform(Matrix().apply {

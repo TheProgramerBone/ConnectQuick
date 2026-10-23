@@ -17,16 +17,25 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import dev.connectquick.controller.connectQuick
+import dev.connectquick.controller.input.InputClient
+import dev.connectquick.controller.input.InputSink
 import dev.connectquick.controller.input.MouseButton
+import dev.connectquick.controller.input.TouchAction
+import dev.connectquick.controller.input.TouchEvent
+import dev.connectquick.controller.input.TouchSample
+import dev.connectquick.controller.input.TouchpadEngine
+import dev.connectquick.controller.input.VirtualPointer
+import dev.connectquick.controller.stream.AutoQuality
 import dev.connectquick.controller.session.ControllerHub
 import dev.connectquick.controller.stream.StreamProfile
 import dev.connectquick.controller.stream.StreamStatus
 import dev.connectquick.controller.stream.StreamTexts
 
 /**
- * Live view of the PC's screen, with direct touch control: touch where you want the pointer, tap to
- * click, press and hold for a right click. Two fingers zoom and pan the picture (they never move the
- * PC's pointer). "Pantalla completa" hides everything but the picture and turns to landscape; turning
+ * Live view of the PC's screen. Two input modes: "Directo" (touch where you want the pointer, tap to
+ * click, press and hold for a right click) and "Touchpad" (the finger moves a pointer the phone draws
+ * itself, so it reacts instantly; tap clicks, tap-and-drag drags, and moves are finer when zoomed).
+ * In both modes two fingers zoom and pan the picture (they never move the PC's pointer). "Pantalla completa" hides everything but the picture and turns to landscape; turning
  * the phone sideways does the same. The video comes straight from the PC (or through a TURN relay);
  * the app server never carries it. Streaming runs only while this screen is visible.
  */
@@ -53,6 +62,15 @@ class ScreenActivity : HubActivity() {
     private var longPress: Runnable? = null
     private var fullscreen = false
 
+    // Touchpad mode: a pointer the phone tracks and draws itself (no waiting for the video to show it).
+    private var touchpadMode = false
+    private var modeButton: android.widget.Button? = null
+    private var cursor: PointerOverlay? = null
+    private var pointer: VirtualPointer? = null
+    private var padEngine: TouchpadEngine? = null
+    private var padFor: InputClient? = null
+    private val auto = AutoQuality()
+
     // Touch state: one finger drives the PC pointer; as soon as a second finger lands, the gesture belongs to zoom/pan.
     private var zoomGesture = false
     private var pinchDistance = 0f
@@ -68,6 +86,8 @@ class ScreenActivity : HubActivity() {
         chrome.clear()
         video?.let { connectQuick.rtc.attach(null); it.release() } // rebuilt for another PC: free the old renderer
         profile = StreamProfile.fromName(connectQuick.store.streamProfile())
+        touchpadMode = connectQuick.store.screenTouchpadMode()
+        padFor = null
         content.setPadding(Ui.dp(ctx, 12), Ui.dp(ctx, 12), Ui.dp(ctx, 12), Ui.dp(ctx, 12))
         backRow("Pantalla").also { content.addView(it, Ui.lp(ctx, bottom = 8)); chrome += it }
         banner = Banner(ctx) { hub?.retryNow() }.also { content.addView(it, Ui.lp(ctx, bottom = 8)); chrome += it }
@@ -77,11 +97,14 @@ class ScreenActivity : HubActivity() {
         val v = ZoomableVideoView(ctx, connectQuick.rtc.eglBase.eglBaseContext)
         video = v
         v.contentDescription = "Pantalla del PC en directo. Toca para mover el puntero y hacer clic; dos dedos para ampliar."
-        v.onVideoSize = { _, _ -> layoutVideo() }
+        v.onVideoSize = { _, _ -> layoutVideo(); v.post { placeCursor() } }
         frame.addView(v, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
         val note = Ui.label(ctx, "", 15f, 0xFFACB8D6.toInt()).apply { gravity = Gravity.CENTER; setPadding(Ui.dp(ctx, 24), 0, Ui.dp(ctx, 24), 0) }
         placeholder = note
         frame.addView(note, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val pointerView = PointerOverlay(ctx).apply { visibility = if (touchpadMode) View.VISIBLE else View.GONE }
+        cursor = pointerView
+        frame.addView(pointerView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         // Shown over the picture when zoomed: how much, and one tap back to the whole screen.
         val badge = Ui.label(ctx, "", 13f, Color.WHITE, true).apply {
@@ -89,7 +112,7 @@ class ScreenActivity : HubActivity() {
             setPadding(Ui.dp(ctx, 12), Ui.dp(ctx, 8), Ui.dp(ctx, 12), Ui.dp(ctx, 8))
             visibility = View.GONE
             contentDescription = "Restablecer el zoom"
-            setOnClickListener { Ui.haptic(it); video?.viewport?.reset(); video?.applyViewport(); updateZoomBadge() }
+            setOnClickListener { Ui.haptic(it); video?.viewport?.reset(); video?.applyViewport(); updateZoomBadge(); placeCursor() }
         }
         zoomBadge = badge
         frame.addView(badge, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.START).apply {
@@ -105,6 +128,8 @@ class ScreenActivity : HubActivity() {
             setTextColor(Color.WHITE)
         }
         floating.addView(overlayButton("⌨", "Abrir el teclado") { openKeyboard() })
+        floating.addView(overlayButton("☝", "Cambiar entre toque directo y touchpad") { toggleMode() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = Ui.dp(ctx, 6) })
+        floating.addView(overlayButton("📷", "Guardar una captura de la pantalla del PC") { screenshot() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = Ui.dp(ctx, 6) })
         floating.addView(overlayButton("Perfil", "Cambiar el perfil de calidad") { cycleProfile() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = Ui.dp(ctx, 6) })
         floating.addView(overlayButton("✕", "Salir de pantalla completa") { setFullscreen(false) }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginStart = Ui.dp(ctx, 6) })
         frame.addView(floating, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
@@ -125,7 +150,8 @@ class ScreenActivity : HubActivity() {
         profileButton = Ui.button(ctx, "Perfil: ${profile.label}") { cycleProfile() }.apply { contentDescription = "Perfil de calidad: ${profile.label}. ${profile.hint}" }
         val full = Ui.button(ctx, "Completa") { setFullscreen(true) }.apply { contentDescription = "Pantalla completa en horizontal" }
         val row2 = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        val pad = Ui.button(ctx, "Touchpad") { startActivity(Intent(ctx, TouchpadActivity::class.java)) }
+        modeButton = Ui.button(ctx, modeLabel()) { toggleMode() }.apply { contentDescription = "Modo de control: ${modeLabel()}" }
+        val shot = Ui.button(ctx, "Captura") { screenshot() }.apply { contentDescription = "Guardar una captura de la pantalla del PC en el teléfono" }
         val kb = Ui.button(ctx, "Teclado") { openKeyboard() }
         fun fill(row: LinearLayout, buttons: List<android.widget.Button>) = buttons.forEachIndexed { i, b ->
             row.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = if (i == 0) 0 else Ui.dp(ctx, 4) })
@@ -133,7 +159,7 @@ class ScreenActivity : HubActivity() {
             b.textSize = 13f
         }
         fill(row1, listOf(toggle!!, profileButton!!, full))
-        fill(row2, listOf(pad, kb))
+        fill(row2, listOf(modeButton!!, shot, kb))
         content.addView(row1, Ui.lp(ctx, bottom = 6)); chrome += row1
         content.addView(row2, Ui.lp(ctx)); chrome += row2
 
@@ -178,6 +204,7 @@ class ScreenActivity : HubActivity() {
             placeholder?.text = reason
             return
         }
+        ensurePadEngine()
         if (streams != null) {
             showStatus(streams.status)
             val phase = streams.status.phase
@@ -196,10 +223,108 @@ class ScreenActivity : HubActivity() {
             setColor(if (toggle?.text == "Iniciar") Ui.ACCENT_FILL else Ui.DANGER_FILL)
         })
         if (!fullscreen) hud?.announceForAccessibility(t.headline)
+        padEngine?.let { e -> val ms = moveIntervalMs(s); if (e.config.minMoveIntervalMs != ms) e.config = e.config.copy(minMoveIntervalMs = ms) }
+        autoAdjust(s)
     }
 
     private fun startStream() {
-        hub?.streams?.start(profile.request)
+        val request = if (profile == StreamProfile.AUTO) { auto.onNetwork(isMetered()); auto.current } else profile.request
+        hub?.streams?.start(request)
+    }
+
+    private fun isMetered(): Boolean =
+        (getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager).isActiveNetworkMetered
+
+    /** Auto profile: restart with a lower ceiling after sustained delay, or a new one when the network type changes. */
+    private fun autoAdjust(s: StreamStatus) {
+        if (profile != StreamProfile.AUTO || s.phase != StreamStatus.Phase.STREAMING) return
+        val change = auto.onNetwork(isMetered()) ?: auto.onStats(s.stats?.rttMs) ?: return
+        hub?.streams?.start(change)
+        toast(if (change.maxFps < 30 || change.maxWidth < 1280) "Auto: calidad reducida por la red" else "Auto: calidad ajustada a la red")
+    }
+
+    /** Pointer motion is flushed more often in Juego, or whenever the round trip is short anyway. */
+    private fun moveIntervalMs(s: StreamStatus?): Long {
+        val rtt = s?.stats?.rttMs ?: 0
+        return if (profile.lowLatency || (rtt in 1..39)) 4L else 8L
+    }
+
+    private fun modeLabel() = if (touchpadMode) "Modo: Touchpad" else "Modo: Directo"
+
+    private fun toggleMode() {
+        touchpadMode = !touchpadMode
+        connectQuick.store.saveScreenTouchpadMode(touchpadMode)
+        padEngine?.cancel()
+        modeButton?.text = modeLabel()
+        modeButton?.contentDescription = "Modo de control: ${modeLabel()}"
+        cursor?.visibility = if (touchpadMode) View.VISIBLE else View.GONE
+        toast(if (touchpadMode) "Touchpad: el dedo mueve el puntero; toque = clic, dos dedos = zoom" else "Directo: toca donde quieras hacer clic")
+        placeCursor()
+    }
+
+    /** Builds the relative-pointer engine for the current session (again whenever the session changes). */
+    private fun ensurePadEngine() {
+        val input = hub?.input
+        if (input === padFor) return
+        padEngine?.cancel()
+        padFor = input
+        if (input == null) { padEngine = null; pointer = null; return }
+        val vp = VirtualPointer { x, y -> input.mouseAbsolute(x, y) }.apply {
+            buttons = object : InputSink by input {
+                override fun mouseButton(button: MouseButton, down: Boolean) {
+                    input.mouseButton(button, down)
+                    if (down) videoFrame?.let { Ui.haptic(it) }
+                }
+            }
+            onMoved = { fx, fy ->
+                video?.let { v -> if (v.viewport.ensureVisible(fx, fy)) { v.applyViewport(); updateZoomBadge() } }
+                placeCursor()
+            }
+        }
+        pointer = vp
+        // Sensitivity 1: the pointer follows the finger across the picture as seen (zoom makes it finer).
+        padEngine = TouchpadEngine(vp, connectQuick.store.touchpad().copy(sensitivity = 1.2f, pinchZoom = false, minMoveIntervalMs = moveIntervalMs(hub?.streams?.status)))
+    }
+
+    /** Positions the locally drawn pointer over the picture, following zoom and pan. */
+    private fun placeCursor() {
+        val c = cursor ?: return
+        val v = video ?: return
+        val p = pointer
+        if (!touchpadMode || p == null || v.videoSize == null) { c.hidePointer(); return }
+        val vp = v.viewport
+        c.showAt(v.left + p.x * v.width * vp.scale + vp.offsetX, v.top + p.y * v.height * vp.scale + vp.offsetY)
+    }
+
+    /** Saves the next frame as a PNG in Pictures/ConnectQuick (no storage permission needed). */
+    private fun screenshot() {
+        val v = video ?: return
+        if (v.videoSize == null) { toast("Inicia la pantalla para poder capturarla"); return }
+        videoFrame?.let { Ui.haptic(it) }
+        v.capture { bmp ->
+            if (bmp == null) { toast("No llegó ninguna imagen; ¿está la pantalla en marcha?"); return@capture }
+            Thread {
+                val ok = runCatching { saveImage(bmp) }.isSuccess
+                runOnUiThread { toast(if (ok) "Captura guardada en Imágenes/ConnectQuick" else "No se pudo guardar la captura") }
+            }.start()
+        }
+    }
+
+    private fun saveImage(bmp: android.graphics.Bitmap) {
+        val name = "ConnectQuick_" + java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date()) + ".png"
+        if (Build.VERSION.SDK_INT >= 29) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/ConnectQuick")
+            }
+            val uri = contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("no media uri")
+            contentResolver.openOutputStream(uri)!!.use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        } else {
+            // Before Android 10, the app's own Pictures folder needs no permission (visible via a file manager).
+            val dir = java.io.File(getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES), "ConnectQuick").apply { mkdirs() }
+            java.io.FileOutputStream(java.io.File(dir, name)).use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
     }
 
     private fun toggleStream() {
@@ -294,6 +419,7 @@ class ScreenActivity : HubActivity() {
                 // A second finger: this is a zoom/pan gesture now. Drop any pending click or right click.
                 zoomGesture = true
                 cancelLongPress()
+                padEngine?.cancel() // a second finger means zoom: never leave a button held on the PC
                 pinchDistance = distance(ev)
                 pinchCenterX = (localX(0) + localX(1)) / 2f
                 pinchCenterY = (localY(0) + localY(1)) / 2f
@@ -310,6 +436,7 @@ class ScreenActivity : HubActivity() {
                 pinchDistance = d; pinchCenterX = cx; pinchCenterY = cy
                 v.applyViewport()
                 updateZoomBadge()
+                placeCursor()
             } else if (ev.actionMasked == MotionEvent.ACTION_POINTER_UP && ev.pointerCount == 3) {
                 // From three fingers back to two: restart the pinch from the remaining pair.
                 pinchDistance = 0f
@@ -320,6 +447,7 @@ class ScreenActivity : HubActivity() {
         val input = hub?.input ?: return
         if (v.videoSize == null || frame.width == 0) return
         if (unavailableReason("mouse") != null) return
+        if (touchpadMode) { touchpadTouch(ev); return }
         val (fx, fy) = v.viewport.toFraction(localX(0), localY(0))
         val x = (fx * 65535f).toInt()
         val y = (fy * 65535f).toInt()
@@ -349,10 +477,30 @@ class ScreenActivity : HubActivity() {
         }
     }
 
+    /** Touchpad mode: the first finger drives the relative engine (move, tap = click, tap-and-drag = drag). */
+    private fun touchpadTouch(ev: MotionEvent) {
+        val e = padEngine ?: return
+        val p = pointer ?: return
+        val v = video ?: return
+        p.viewWidth = v.width.toFloat(); p.viewHeight = v.height.toFloat(); p.zoom = v.viewport.scale
+        val one = listOf(TouchSample(ev.getPointerId(0), ev.getX(0), ev.getY(0)))
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> e.onTouch(TouchEvent(TouchAction.DOWN, ev.eventTime, one))
+            MotionEvent.ACTION_MOVE -> e.onTouch(TouchEvent(TouchAction.MOVE, ev.eventTime, one))
+            MotionEvent.ACTION_UP -> e.onTouch(TouchEvent(TouchAction.UP, ev.eventTime, emptyList()))
+            MotionEvent.ACTION_CANCEL -> e.cancel()
+        }
+    }
+
     private fun distance(ev: MotionEvent): Float {
         val dx = ev.getX(0) - ev.getX(1)
         val dy = ev.getY(0) - ev.getY(1)
         return kotlin.math.sqrt(dx * dx + dy * dy)
+    }
+
+    override fun onPause() {
+        padEngine?.cancel() // leaving the screen must never leave a button held on the PC
+        super.onPause()
     }
 
     override fun onStop() {
@@ -366,5 +514,40 @@ class ScreenActivity : HubActivity() {
         hub?.streams?.onStatus = null
         video?.release()
         super.onDestroy()
+    }
+}
+
+/** The pointer the phone draws itself in touchpad mode: an arrow with a dark outline, visible on any picture. */
+class PointerOverlay(ctx: android.content.Context) : View(ctx) {
+    private var px = -1f
+    private var py = -1f
+    private val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = android.graphics.Paint.Style.FILL }
+    private val edge = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(230, 10, 14, 30); style = android.graphics.Paint.Style.STROKE; strokeWidth = Ui.dpf(ctx, 1.6f); strokeJoin = android.graphics.Paint.Join.ROUND
+    }
+    private val arrow = android.graphics.Path()
+
+    init {
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+        isClickable = false
+    }
+
+    fun showAt(x: Float, y: Float) { px = x; py = y; invalidate() }
+    fun hidePointer() { px = -1f; invalidate() }
+
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        if (px < 0f) return
+        val u = Ui.dpf(context, 1f)
+        arrow.reset()
+        arrow.moveTo(px, py)
+        arrow.lineTo(px, py + 18 * u)
+        arrow.lineTo(px + 4.5f * u, py + 14 * u)
+        arrow.lineTo(px + 8 * u, py + 21 * u)
+        arrow.lineTo(px + 11 * u, py + 19.5f * u)
+        arrow.lineTo(px + 7.5f * u, py + 12.5f * u)
+        arrow.lineTo(px + 13 * u, py + 12.5f * u)
+        arrow.close()
+        canvas.drawPath(arrow, fill)
+        canvas.drawPath(arrow, edge)
     }
 }

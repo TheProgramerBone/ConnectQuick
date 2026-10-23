@@ -32,7 +32,18 @@ data class TouchpadConfig(
     val scrollStartPx: Float = 6f,
     /** Pointer motion is flushed to the network at most this often; deltas are summed in between. */
     val minMoveIntervalMs: Long = 8,
+    /** Two fingers spreading/pinching zoom on the PC (Ctrl + wheel) instead of scrolling. */
+    val pinchZoom: Boolean = true,
+    /** Change in finger distance that starts a pinch (must also beat the fingers' common travel). */
+    val pinchStartPx: Float = 28f,
+    /** Change in finger distance that makes one zoom notch. */
+    val pinchPixelsPerNotch: Float = 40f,
+    /** Three fingers must travel this far to count as a swipe; less (and quick) is a three-finger tap. */
+    val threeSwipePx: Float = 60f,
 )
+
+/** Three-finger swipes. The app maps them to Windows shortcuts (see `Shortcuts.forGesture`). */
+enum class TouchGesture { SWIPE_LEFT, SWIPE_RIGHT, SWIPE_UP, SWIPE_DOWN }
 
 /**
  * Turns raw touches into mouse intent. Gestures:
@@ -40,13 +51,15 @@ data class TouchpadConfig(
  *  - a quick tap is a left click;
  *  - a tap followed at once by touch-and-move is a drag (left button held until the finger lifts);
  *  - a quick tap of two fingers is a right click;
- *  - two fingers moving together scroll (vertical and horizontal).
+ *  - two fingers moving together scroll (vertical and horizontal);
+ *  - two fingers spreading or pinching zoom on the PC (Ctrl + wheel);
+ *  - three fingers swiping report a [TouchGesture]; a quick three-finger tap is a middle click.
  * Pure and deterministic: time comes from the events, so it is fully unit-testable.
  * Sub-pixel motion is carried over between events, so slow movement is never lost to rounding.
  */
 class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = TouchpadConfig()) {
 
-    private enum class Mode { IDLE, POINTING, DRAGGING, SCROLLING, TWO_FINGER_PENDING }
+    private enum class Mode { IDLE, POINTING, DRAGGING, SCROLLING, TWO_FINGER_PENDING, PINCHING, THREE_FINGER }
 
     private var mode = Mode.IDLE
     private var downTimeMs = 0L
@@ -79,6 +92,17 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
     private var twoLastCenterX = 0f
     private var twoLastCenterY = 0f
     private var twoMovedPastSlop = false
+    private var twoStartDistance = 0f
+    private var pinchRem = 0f
+    private var ctrlHeld = false
+    private var threeStartX = 0f
+    private var threeStartY = 0f
+    private var threeLastX = 0f
+    private var threeLastY = 0f
+    private var threeStartMs = 0L
+
+    /** Called for a recognised three-finger swipe. */
+    var onGesture: ((TouchGesture) -> Unit)? = null
     private var maxPointers = 0
 
     val isDragging: Boolean get() = leftHeld
@@ -120,6 +144,7 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
             dragLocked = false
             onDragLockChanged?.invoke(false)
         }
+        releaseCtrl()
         mode = Mode.IDLE
         candidateDoubleTap = false
         lastTapUpMs = NO_TAP
@@ -155,7 +180,15 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
             val (cx, cy) = center(e.pointers)
             twoStartCenterX = cx; twoStartCenterY = cy; twoLastCenterX = cx; twoLastCenterY = cy
             twoMovedPastSlop = false
+            twoStartDistance = distance(e.pointers)
+            pinchRem = 0f
             scrollRemX = 0f; scrollRemY = 0f
+        } else if (n == 3 && mode != Mode.THREE_FINGER) {
+            releaseCtrl()
+            mode = Mode.THREE_FINGER
+            threeStartMs = e.timeMs
+            val (cx, cy) = centroid(e.pointers)
+            threeStartX = cx; threeStartY = cy; threeLastX = cx; threeLastY = cy
         }
     }
 
@@ -163,6 +196,8 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
         when (mode) {
             Mode.POINTING, Mode.DRAGGING -> if (e.pointers.size == 1) movePointer(e)
             Mode.TWO_FINGER_PENDING, Mode.SCROLLING -> if (e.pointers.size >= 2) moveScroll(e)
+            Mode.PINCHING -> if (e.pointers.size >= 2) movePinch(e)
+            Mode.THREE_FINGER -> if (e.pointers.size >= 3) { val (cx, cy) = centroid(e.pointers); threeLastX = cx; threeLastY = cy }
             Mode.IDLE -> {}
         }
     }
@@ -217,7 +252,19 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
     private fun moveScroll(e: TouchEvent) {
         val (cx, cy) = center(e.pointers)
         if (mode == Mode.TWO_FINGER_PENDING) {
-            if (hypot(cx - twoStartCenterX, cy - twoStartCenterY) < config.scrollStartPx) return
+            val spread = kotlin.math.abs(distance(e.pointers) - twoStartDistance)
+            val travel = hypot(cx - twoStartCenterX, cy - twoStartCenterY)
+            if (config.pinchZoom && spread >= config.pinchStartPx && spread > travel) {
+                // The fingers moved apart/together more than they moved as a pair: a zoom, not a scroll.
+                mode = Mode.PINCHING
+                twoMovedPastSlop = true
+                twoStartDistance = distance(e.pointers)
+                pinchRem = 0f
+                sink.key("ControlLeft", true)
+                ctrlHeld = true
+                return
+            }
+            if (travel < config.scrollStartPx) return
             mode = Mode.SCROLLING
             twoMovedPastSlop = true
         }
@@ -236,6 +283,24 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
         if (ix != 0 || iy != 0) {
             scrollRemY -= iy; scrollRemX -= ix
             sink.wheel(ix, iy)
+        }
+    }
+
+    private fun movePinch(e: TouchEvent) {
+        val d = distance(e.pointers)
+        pinchRem += (d - twoStartDistance) / config.pinchPixelsPerNotch * 120f
+        twoStartDistance = d
+        val notches = pinchRem.toInt()
+        if (notches != 0) {
+            pinchRem -= notches
+            sink.wheel(0, notches) // spreading = wheel up = zoom in with Ctrl held
+        }
+    }
+
+    private fun releaseCtrl() {
+        if (ctrlHeld) {
+            sink.key("ControlLeft", false)
+            ctrlHeld = false
         }
     }
 
@@ -268,6 +333,31 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
                 mode = Mode.IDLE
                 resetMotionState()
             }
+            Mode.PINCHING -> if (remaining <= 1) {
+                releaseCtrl()
+                mode = Mode.IDLE
+                lastTapUpMs = NO_TAP
+                resetMotionState()
+            }
+            Mode.THREE_FINGER -> if (remaining == 0) {
+                val dx = threeLastX - threeStartX
+                val dy = threeLastY - threeStartY
+                val ax = kotlin.math.abs(dx)
+                val ay = kotlin.math.abs(dy)
+                when {
+                    maxOf(ax, ay) >= config.threeSwipePx -> onGesture?.invoke(
+                        if (ax >= ay) (if (dx > 0) TouchGesture.SWIPE_RIGHT else TouchGesture.SWIPE_LEFT)
+                        else (if (dy > 0) TouchGesture.SWIPE_DOWN else TouchGesture.SWIPE_UP),
+                    )
+                    e.timeMs - threeStartMs <= config.tapMaxMs + 100 -> {
+                        sink.mouseButton(MouseButton.MIDDLE, true)
+                        sink.mouseButton(MouseButton.MIDDLE, false)
+                    }
+                }
+                mode = Mode.IDLE
+                lastTapUpMs = NO_TAP
+                resetMotionState()
+            }
             Mode.TWO_FINGER_PENDING, Mode.SCROLLING -> {
                 if (mode == Mode.TWO_FINGER_PENDING && !twoMovedPastSlop && maxPointers == 2 && e.timeMs - twoStartMs <= config.tapMaxMs) {
                     sink.mouseButton(MouseButton.RIGHT, true)
@@ -289,6 +379,12 @@ class TouchpadEngine(private val sink: InputSink, var config: TouchpadConfig = T
         val b = points[1]
         return (a.x + b.x) / 2f to (a.y + b.y) / 2f
     }
+
+    private fun distance(points: List<TouchSample>): Float =
+        if (points.size < 2) 0f else hypot(points[0].x - points[1].x, points[0].y - points[1].y)
+
+    private fun centroid(points: List<TouchSample>): Pair<Float, Float> =
+        points.map { it.x }.average().toFloat() to points.map { it.y }.average().toFloat()
 
     private fun hypot(a: Float, b: Float): Float = kotlin.math.sqrt(a * a + b * b)
 
