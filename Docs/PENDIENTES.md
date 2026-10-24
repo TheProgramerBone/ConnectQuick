@@ -1,157 +1,128 @@
 # ConnectQuick — Pendientes y plan para la próxima sesión
 
-Última actualización: 18-oct-2026. Rama de trabajo: `claude/build-all-installer` (sin PR abierto, `main` intacta).
-Contexto general: `Docs/STATUS.md` (estado del producto) y `Docs/GUIA_INSTALACION_Y_PRUEBAS.md` (cómo instalar y probar).
+Última actualización: 24-oct-2026. Rama de trabajo: **`main`** (se trabaja siempre directo en `main`).
+Contexto: `Docs/STATUS.md` (estado técnico detallado), `CLAUDE.md` (memoria del proyecto),
+`Docs/SERVIDOR_GRATIS_GOOGLE_CLOUD.md` (servidor en la nube).
 
 ## Dónde estamos
 
-| Hecho | Estado real |
+| Qué | Estado real |
 |---|---|
-| Vínculo (pairing) PC ↔ móvil | Verificado con dos dispositivos reales en LAN (11-sep-2026) |
-| `build-all.ps1` / `build-all.bat` (instalador + portable + APK) | **Escrito, NUNCA ejecutado en Windows** |
-| Backend incluido en el instalador (modo LAN) | Solo comprobado en Linux que el Backend arranca con esa estructura de carpetas |
-| Soporte Tailscale Funnel (`-Funnel`) | **Sin probar** |
-| Versión portable (`ConnectQuick-Portable.zip`) | **Sin probar** |
-| Control remoto (ratón, teclado, pantalla, mandos) | No existe (fases 4-9) |
-
-Regla para la próxima sesión: **no construir encima de lo que no se ha probado**. Primero el bloque A.
+| Vincular por QR, control (ratón, teclado), pantalla, portapapeles, multimedia, archivos, energía | **Funciona en uso real** (confirmado por el dueño, en casa y desde otra red) |
+| Servidor propio gratis en Google Cloud (e2-micro, `wss://35-209-191-155.sslip.io`) | **Funcionando** desde el 24-oct-2026. PC y celular en redes distintas (datos móviles) confirmado |
+| Temas oscuro/claro y estética «liquid glass» (PC y móvil) | Instalado; sin confirmación explícita de cada pantalla |
+| Arreglo del QR (la ventana del PC pasa al código de 6 cifras al escanear) | Instalado; sin confirmación explícita |
+| Mejoras del móvil (zoom, pantalla completa, perfiles Auto/Texto/Normal/Video/Juego/Ahorro, gestos de 3 dedos, pellizco, modo touchpad con puntero local, bloqueo de arrastre, atajos, F1–F12, barra de teclas, captura, vibración) | Instaladas; **sin confirmación una por una** |
+| Relevo de vídeo embebido para Tailscale Funnel (`-Funnel`) | Escrito y con tests, **nunca probado en real** (ya no hace falta con el servidor de Google) |
 
 ---
 
-## A. Validar lo ya escrito (prioridad máxima)
+## 0. Revisar ya (sin programar)
 
-### A1. Ejecutar `build-all.bat` en tu PC y corregir lo que falle
-- **Objetivo:** que `dist\` contenga `ConnectQuick-Setup.exe`, `ConnectQuick-Portable.zip` y `ConnectQuick.apk`.
-- **Plan:**
-  1. Seguir la sección 3 de `GUIA_INSTALACION_Y_PRUEBAS.md`.
-  2. Si falla, pegar el mensaje completo (la ventana se queda abierta con `pause`).
-  3. Corregir `build-all.ps1`, volver a ejecutar, repetir hasta generar los tres archivos.
-- **Riesgos conocidos, sin verificar** (mirar primero aquí si falla):
-  - `sdkmanager.bat` con argumentos que llevan `;` (`platforms;android-34`): si falla, entrecomillarlos.
-  - Versiones fijadas: línea de comandos del SDK de Android `11076708` y Node `22.22.0`; si alguna URL da 404, actualizar.
-  - IDs de `winget` (`Microsoft.DotNet.SDK.8`, `EclipseAdoptium.Temurin.17.JDK`, `JRSoftware.InnoSetup`, `Tailscale.Tailscale`).
-  - Plantilla de Inno Setup (`ArchitecturesAllowed=x64compatible` pide Inno 6.3+, idioma `Spanish.isl`).
-  - Rutas con espacios en el nombre de usuario de Windows.
-  - Falta del *Developer Mode*/rutas largas al compilar Android si la carpeta está muy anidada (usar `C:\ConnectQuick`).
-- **Hecho cuando:** los tres archivos existen y el instalador se ejecuta sin errores.
-- **Alternativa que no depende de tu PC:** un workflow de GitHub Actions en `windows-latest` que ejecute el script
-  (ver C1). Detecta fallos de compilación, aunque no los de instalación en tu máquina.
-
-### A2. Prueba de vínculo real en LAN (modo A)
-- **Plan:** sección 3.5 de la guía (QR → "¿Autorizar?" → "Vinculado con…").
-- **Hecho cuando:** el móvil muestra `Vinculado con "<PC>" ✓` y el PC lista el dispositivo.
-- **Ojo:** probar con el servidor instalado por el instalador (no con `npm run dev`), para validar el empaquetado.
-
-### A3. Prueba de Funnel (modo B)
-- **Plan:** sección 4 de la guía; comprobar con el móvil en **datos móviles**.
-- **Incógnitas a confirmar:** que el PC pueda conectarse a su propia URL pública (el Host usa `wss://tu-pc.ts.net`);
-  que Funnel acepte WebSocket sin problemas; que `tailscale funnel --bg 8443` reenvíe a `127.0.0.1:8443`.
-- **Hecho cuando:** vínculo completo con el móvil fuera de tu Wi-Fi.
-
-### A4. Probar la versión portable
-- **Plan:** extraer el ZIP en otra carpeta, `Iniciar-ConnectQuick.cmd`, repetir A2.
-- **Hecho cuando:** vínculo funciona sin haber ejecutado el instalador.
-
-### A5. Decidir qué hacer con la rama
-- Abrir PR hacia `main` (cuando A1-A4 pasen) o seguir en la rama. Nada se ha mezclado con `main` todavía.
+- [ ] **Gasto en Google Cloud**: Facturación → Informes, 1–2 días después de crear la máquina. Lo esperado: 0 o céntimos.
+  Si aparece un cargo fijo (por ejemplo «IP externa», ~3–4 USD/mes), decidir: aceptarlo, liberar la IP estática
+  (cambiaría la dirección y habría que volver a vincular) o mover el servidor.
+- [ ] Confirmar una por una las mejoras del móvil de la tabla de arriba y anotar lo que se sienta torpe
+  (gestos, zoom, modo touchpad, perfil Auto). Ajustar con datos reales.
+- [ ] La alerta de presupuesto de 1 USD sigue activa.
 
 ---
 
-## B. Funcionalidad nueva (en este orden)
+## A. Conexión estilo AnyDesk (siguiente bloque recomendado)
 
-### B1. Un celular con varios PC  — *pequeño, hacerlo primero*
-- **Problema:** `authorized_devices` usa `device_id` como clave única. Al vincular el mismo celular con un segundo PC,
-  `ON CONFLICT(device_id) DO UPDATE` no cambia `host_id`, y `isAuthorized(device, host)` lo rechaza. Además la app
-  Android no guarda lista de PC.
-- **Plan:**
-  1. **Backend** (`db.ts`, `registry/deviceRepository.ts`): clave primaria `(device_id, host_id)`; `find`/`isAuthorized`/
-     `revoke`/`touchLastConnected` por par; migración de la base existente (crear tabla nueva, copiar, renombrar).
-  2. **Pruebas** (`Backend/test`): mismo celular vinculado a dos PC; revocar uno no afecta al otro; `session.connect` a ambos.
-  3. **Android:** guardar lista de PC vinculados (nombre, `hostId`, relay) en almacenamiento cifrado; pantalla de lista
-     para elegir PC; botón "Vincular otro PC".
-  4. **Protocolo** (`Protocol/protocol-spec.md`): documentar que un Controller puede tener N Hosts.
-- **Hecho cuando:** un celular vinculado a dos PC puede pedir `session.connect` a cualquiera.
-- **Decisión pendiente:** ¿permitir que dos PC distintos usen servidores (relays) diferentes? Por ahora, uno solo.
+Análisis completo hecho el 24-oct-2026 leyendo todo el código de conexión. Orden por valor/esfuerzo:
 
-### B2. Fase 4 mínima: teclado virtual con perfiles
-- **Objetivo:** jugar un juego sencillo con WASD o flechas desde el celular.
-- **Plan:**
-  1. **Protocolo:** mensajes `input.key` (`code`, `down`), `input.state` (estado completo periódico), `input.mouse`;
-     con número de secuencia. Esquemas JSON + vectores de prueba.
-  2. **Host (Windows):** inyección con `SendInput` usando **scancodes** (no caracteres); contador de referencias por
-     tecla (varias fuentes para la misma acción); **liberar todo** si no llega señal en 1-2 s o al desconectar.
-  3. **Android:** pantalla de control horizontal con perfiles integrados (WASD, flechas, cruceta, joystick virtual);
-     multitáctil; vibración.
-  4. **Primera ruta:** pasar por el Backend (simple, más latencia). Medir.
-- **Riesgos:** juegos ejecutados como administrador ignoran la entrada (ejecutar el Host también como admin);
-  anticheat puede marcar la entrada simulada.
-- **Hecho cuando:** en un juego sencillo, mantener un botón mueve al personaje y soltarlo (o cortar la conexión) lo detiene.
+### A1. Detectar cambios de red en el PC + latido rápido durante una sesión — *pequeño*
+- **Problema:** `NotifyNetworkChanged()` existe en `WindowsHost/.../Net/BackendClient.cs` pero **nadie lo llama**: si el PC
+  (portátil) cambia de Wi-Fi tarda hasta 40 s en reconectar. En ambos clientes el latido es cada 15 s y el enlace se da
+  por muerto a los 40 s, también con una sesión activa: un corte silencioso congela el control hasta 40 s.
+- **Plan:** suscribirse a `NetworkChange.NetworkAddressChanged` en el host; con sesión activa, ping cada 5 s y corte a
+  los 12 s (fuera de sesión se queda como está, por batería/tráfico).
+- **Ojo:** C# no se puede compilar en el sandbox de la nube (no hay `dotnet`); el dueño compila primero.
 
-### B3. Editor de perfiles, compartir y cambio automático
-- Perfil = archivo JSON (botones, tecla, posición, tamaño, acciones). Editor táctil; exportar/importar y por QR.
-- El Host informa la ventana/proceso activo; el móvil cambia de perfil según una regla por programa.
-- Capas/páginas, macros, mantener/alternar, sensibilidad y zona muerta.
+### A2. Lista de relays, el más rápido primero — *medio*
+- **Problema:** un solo relay fijado al vincular (`PairedHost.relay`, `relay.txt`). En casa todo da la vuelta por Google
+  Cloud; si cambia la dirección del servidor hay que volver a vincular; no hay respaldo.
+- **Plan:** el QR lleva varias direcciones (p. ej. LAN + nube); el móvil las prueba a la vez y usa la primera que
+  autentica; el PC envía la lista actualizada dentro de la sesión cifrada para que el móvil la guarde.
+- **Nota:** para que la ruta LAN sirva con el servidor en la nube, el PC tendría que alojar también un relay local, o
+  añadir una conexión directa LAN entre PC y móvil. Decidir el diseño antes de programar.
 
-### B4. Mandos de PlayStation/Xbox
-- **Fase 1:** el mando físico se conecta al celular (Bluetooth/USB); Android entrega botones/ejes; se traducen a teclas
-  con el perfil. No requiere drivers.
-- **Fase 2:** mando virtual en el PC (ViGEmBus o vJoy; **comprobar si siguen mantenidos**), requiere instalar un driver
-  y permisos de administrador.
-- **Riesgo:** anticheat con drivers virtuales.
+### A3. El vídeo se recupera solo (reinicio de ICE) — *pequeño/medio*
+- **Problema:** `StreamController.onRtcState` cierra el vídeo si WebRTC falla; al pasar de Wi-Fi a datos solo vuelve
+  cuando se rehace toda la sesión.
+- **Plan:** reinicio de ICE al cambiar de red o tras unos segundos en DISCONNECTED; reintento automático tras ERROR.
 
-### B5. Conexión directa y pantalla remota (fase 5)
-- WebRTC entre móvil y PC (el Backend solo señaliza), captura con Windows Graphics Capture, codificación por hardware,
-  `MediaCodec` en Android. Pasar la entrada (B2) a un canal de datos directo para bajar latencia.
-- Es el trabajo más grande: planificarlo aparte antes de empezar.
+### A4. Relevo de vídeo por el puerto 443 — *medio*
+- Redes muy restrictivas (empresas, hoteles) solo dejan pasar 443: el control funciona, el relevo de vídeo (3478) no.
+- **Plan:** coturn con TLS en 443 compartido con Caddy por SNI (segundo nombre `sslip.io`) o por ALPN.
 
-### B6. Varios amigos en un PC (cooperativo)
-- Cada celular autorizado recibe un puesto de jugador (P1…P4) con su mando virtual; permisos limitados por dispositivo
-  ("solo mando": sin ratón, archivos ni apagado). Un solo controlador activo de ratón; los demás, solo mando.
-- Depende de B2-B4. El Backend ya admite varios celulares por PC (`activeSessions.ts`).
+### A5. Vídeo de emergencia por el relay — *grande*
+- Si WebRTC no conecta de ninguna forma, el PC manda la imagen comprimida dentro de la sesión cifrada por WebSocket
+  (menos fps). Los límites del backend (8 MB/s, 400 mensajes/s por sesión) lo permiten. Siempre habría imagen.
 
-### B7. Utilidades para estudio
-- Control de presentaciones, multimedia/volumen, atajos para OBS/Discord, bloquear/apagar el PC (fases 6-9).
+### A6. Ratón por canal directo WebRTC (DataChannel) — *grande*
+- Movimientos sin reintentos y sin pasar por el relay cuando el vídeo está conectado; el relay queda de respaldo.
+  Quita los tirones de TCP en datos móviles con pérdidas. Cambio de protocolo en las tres plataformas.
+
+### A7. Reanudar la sesión tras un microcorte — *grande*
+- Hoy la sesión muere con el socket (`activeSessions.ts`). Un token de reanudación evitaría rehacer el handshake y
+  renegociar el vídeo. Cambio de protocolo en las tres plataformas.
 
 ---
 
-## C. Calidad, rendimiento y distribución
+## B. Funcionalidad nueva
+
+### B1. Un celular con varios PC
+- **Problema:** `authorized_devices` usa `device_id` como clave única en el backend; la app Android guarda un solo PC.
+- **Plan:** clave `(device_id, host_id)` con migración; pruebas de vincular/revocar por par; lista de PC en Android con
+  selector; documentarlo en el protocolo.
+
+### B2. Pantalla: elegir monitor y audio del escritorio
+- Varios monitores (captura en el host, selector en el móvil) y audio del PC en el móvil. Trabajo grande en C# (host).
+
+### B3. Mandos y juegos
+- Perfiles de teclado virtual por juego (WASD, flechas, joystick), editor y cambio automático por programa activo.
+- Mando físico conectado al celular → teclas; después mando virtual en el PC (ViGEmBus/vJoy: comprobar si siguen
+  mantenidos). Riesgo: anticheat.
+
+### B4. Varios amigos en un PC (cooperativo)
+- Cada celular con su puesto de jugador y permisos limitados ("solo mando"). Depende de B3.
+
+### B5. Utilidades
+- Control de presentaciones, atajos para OBS/Discord (como atajos fijos tipados, nunca comandos genéricos).
+
+---
+
+## C. Calidad, distribución y seguridad
 
 ### C1. CI en GitHub Actions (Windows)
-- Workflow en `windows-latest`: `build-all.ps1`, pruebas del Backend/.NET/Android, y publicar los tres archivos como
-  artefactos. Valida el script sin depender de tu PC. **Es lo que más ayuda a mantener A1.**
+- `windows-latest`: compilar el host (incluida la app WinForms), pruebas .NET, backend y Kotlin; publicar instalador y
+  APK como artefactos. Cubre lo que el sandbox de la nube no puede compilar (C#).
 
-### C2. Rendimiento (medir antes y después)
-- Backend: sentencias SQL preparadas una vez; `PRAGMA synchronous = NORMAL`.
-- Android: reconexión inmediata al cambiar de red (`NetworkCallback`); liberar cámara/ML Kit al leer el QR.
-- Host: `PublishReadyToRun`; menos asignaciones en `ReceiveLoopAsync`; confirmar ~0 % CPU en reposo.
+### C2. Accesibilidad y pantallas
+- TalkBack/Narrador, tamaños de letra grandes, DPI altos; capturas para el sistema de diseño.
 
-### C3. Tamaño y release
-- APK release: R8 (`isMinifyEnabled`, `isShrinkResources`), ML Kit vía Google Play Services, firma propia.
-- Instalador: opción *framework-dependent*; valorar Node SEA para el Backend.
+### C3. Release
+- APK de publicación: R8, firma propia, solo TLS (ya se usa `wss://`). Instalador firmado y auto-actualización.
 
-### C4. Pruebas que faltan
-- Reconexión y backoff en los tres clientes (`STATUS.md` lo marca pendiente).
-- Prueba de humo del script de compilación (C1).
+### C4. Seguridad
+- Revisión externa / fuzzing del protocolo propio antes de compartir la app con más gente.
+- Bloqueo opcional de la app en el móvil (huella/PIN).
+- Mantener el servidor actualizado: `sudo bash /opt/connectquick/Deploy/gcp/update.sh` en la máquina tras cada cambio
+  en `main` que toque `Backend/` o `Deploy/`.
 
-### C5. Operación
-- Backend como **servicio de Windows**; TLS directo (`CERT_PATH`/`KEY_PATH`) o VPS si se comparte con otras personas.
-- Datos portables reales (`CONNECTQUICK_DATA`) — requiere cambiar el cifrado de la identidad para que no dependa del
-  usuario de Windows (DPAPI).
-- Firma del instalador y auto-actualización desde GitHub Releases.
-- Revisar `Docs/SECURITY.md` antes de dejar Funnel abierto de forma permanente.
+### C5. Limpieza
+- Las ramas `claude/*` antiguas siguen en GitHub (el sandbox no pudo borrarlas: 403). Borrarlas desde la web de GitHub.
+- Si ya no se usa Tailscale: desinstalarlo del PC. El código de `-Funnel` y el TURN embebido pueden quedarse como
+  alternativa documentada.
 
 ---
 
-## D. Preguntas abiertas para ti
+## D. Orden sugerido para la próxima sesión
 
-1. ¿Cuál es el caso de uso principal a corto plazo: jugar solo desde lejos (B2-B4) o jugar con amigos (B6)?
-2. ¿Los juegos que te interesan tienen anticheat? Condiciona la estrategia de mandos virtuales (B4).
-3. ¿Para uso personal basta Funnel, o piensas compartir la app con amigos fuera de tu red (entonces VPS/TLS, C5)?
-4. ¿Prefieres abrir PR a `main` ya, o mantener todo en la rama hasta probarlo en tu PC?
-
-## E. Orden sugerido para la próxima sesión
-
-1. A1 → A2 (y A3/A4 si hay tiempo): con tu PC delante y los errores en la mano.
-2. B1 (un celular, varios PC) con pruebas.
-3. C1 (CI) para no depender de pruebas manuales del script.
-4. Empezar B2 con el diseño del protocolo antes de escribir código.
+1. Bloque 0 (gasto, confirmar mejoras del móvil).
+2. A1 + A3 (reconexión rápida y vídeo que se recupera): pequeños y se notan mucho.
+3. C1 (CI en Windows) para poder compilar el C# sin depender de tu PC.
+4. A2 (lista de relays) tras decidir el diseño de la ruta LAN.
+5. B1 (varios PC) si se necesita; luego A4–A7 según cómo vaya el uso real.
