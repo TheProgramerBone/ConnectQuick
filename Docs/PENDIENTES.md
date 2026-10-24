@@ -32,7 +32,8 @@ Contexto: `Docs/STATUS.md` (estado técnico detallado), `CLAUDE.md` (memoria del
 
 Análisis completo hecho el 24-oct-2026 leyendo todo el código de conexión. Orden por valor/esfuerzo:
 
-### A1. Detectar cambios de red en el PC + latido rápido durante una sesión — *pequeño*
+### A1. Detectar cambios de red en el PC + latido rápido durante una sesión — *pequeño* — ✅ escrito 24-oct, **sin compilar** (sin `dotnet` en la nube; lo valida el CI de C1 o tu PC)
+- Hecho: `HostRuntime` escucha `NetworkChange.NetworkAddressChanged` (1 reconexión por ráfaga, 3 s); `BackendClient.SessionActive` usa ping cada 5 s y corte a 12 s mientras hay sesión.
 - **Problema:** `NotifyNetworkChanged()` existe en `WindowsHost/.../Net/BackendClient.cs` pero **nadie lo llama**: si el PC
   (portátil) cambia de Wi-Fi tarda hasta 40 s en reconectar. En ambos clientes el latido es cada 15 s y el enlace se da
   por muerto a los 40 s, también con una sesión activa: un corte silencioso congela el control hasta 40 s.
@@ -48,7 +49,8 @@ Análisis completo hecho el 24-oct-2026 leyendo todo el código de conexión. Or
 - **Nota:** para que la ruta LAN sirva con el servidor en la nube, el PC tendría que alojar también un relay local, o
   añadir una conexión directa LAN entre PC y móvil. Decidir el diseño antes de programar.
 
-### A3. El vídeo se recupera solo (reinicio de ICE) — *pequeño/medio*
+### A3. El vídeo se recupera solo — *pequeño/medio* — ✅ escrito 24-oct, **sin ejecutar** (Gradle bloqueado por 429 en la nube)
+- Hecho (sin tocar el PC): si el vídeo ya había conectado y pasa 5 s en DISCONNECTED o cae en FAILED, el móvil vuelve a pedir `stream.start` (hasta 3 veces; el PC sustituye el stream). Si nunca conectó, sigue mostrando el error de siempre. Test nuevo en `StreamControllerTest`.
 - **Problema:** `StreamController.onRtcState` cierra el vídeo si WebRTC falla; al pasar de Wi-Fi a datos solo vuelve
   cuando se rehace toda la sesión.
 - **Plan:** reinicio de ICE al cambiar de red o tras unos segundos en DISCONNECTED; reintento automático tras ERROR.
@@ -96,7 +98,7 @@ Análisis completo hecho el 24-oct-2026 leyendo todo el código de conexión. Or
 
 ## C. Calidad, distribución y seguridad
 
-### C1. CI en GitHub Actions (Windows)
+### C1. CI en GitHub Actions (Windows) — ✅ `.github/workflows/ci.yml` escrito 24-oct; primera ejecución pendiente (esperar fallos de primera vez)
 - `windows-latest`: compilar el host (incluida la app WinForms), pruebas .NET, backend y Kotlin; publicar instalador y
   APK como artefactos. Cubre lo que el sandbox de la nube no puede compilar (C#).
 

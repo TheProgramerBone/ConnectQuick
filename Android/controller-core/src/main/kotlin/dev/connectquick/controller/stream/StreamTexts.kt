@@ -12,7 +12,9 @@ data class StreamPresentation(val headline: String, val detail: String, val tone
 object StreamTexts {
     fun of(s: StreamStatus): StreamPresentation = when (s.phase) {
         StreamStatus.Phase.IDLE -> StreamPresentation("Pantalla detenida", "Pulsa Iniciar para ver el PC.", Tone.IDLE, false)
-        StreamStatus.Phase.REQUESTING -> StreamPresentation("Pidiendo la pantalla al PC…", "El PC prepara la captura.", Tone.BUSY, false)
+        StreamStatus.Phase.REQUESTING -> if (s.reason == "reconnecting")
+            StreamPresentation("Recuperando el vídeo…", "Se cortó la conexión (¿cambio de red?). Se reintenta sola.", Tone.BUSY, false)
+        else StreamPresentation("Pidiendo la pantalla al PC…", "El PC prepara la captura.", Tone.BUSY, false)
         StreamStatus.Phase.NEGOTIATING -> StreamPresentation("Estableciendo la conexión de vídeo…", "Buscando el mejor camino entre el teléfono y el PC.", Tone.BUSY, false)
         StreamStatus.Phase.STREAMING -> {
             val blocked = s.blocked

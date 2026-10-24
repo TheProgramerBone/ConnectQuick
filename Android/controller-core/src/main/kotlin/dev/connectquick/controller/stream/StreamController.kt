@@ -32,6 +32,9 @@ class StreamController(
     private val port: SessionPort,
     private val ice: suspend () -> IceConfig,
     private val engine: RtcEngine,
+    /** Test seams for self-healing; production keeps the defaults. */
+    private val retryDelayMs: Long = 1500,
+    private val disconnectGraceMs: Long = 5000,
 ) {
     @Volatile var onStatus: ((StreamStatus) -> Unit)? = null
     @Volatile var status: StreamStatus = StreamStatus(StreamStatus.Phase.IDLE)
@@ -43,6 +46,17 @@ class StreamController(
     private var pendingCandidates = mutableListOf<RtcCandidate>()
     private var haveRemoteOffer = false
     private val subs = mutableListOf<Subscription>()
+
+    // Self-healing: once the media has connected, a network change (Wi-Fi <-> mobile data) kills it while the
+    // control session survives. The phone is the answerer and cannot restart ICE, so it asks the PC for a fresh stream.
+    private var lastRequest: StreamRequest? = null
+    private var wasConnected = false
+    private var recoveries = 0
+    private var generation = 0 // bumped by start/stop/release so a pending retry knows it is stale
+    private var graceTimer: java.util.concurrent.ScheduledFuture<*>? = null
+    private val timer by lazy {
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "stream-recovery").apply { isDaemon = true } }
+    }
 
     init {
         subs += port.on("rtc.offer") { m -> onOffer(m) }
@@ -69,6 +83,11 @@ class StreamController(
 
     /** Asks the PC to start streaming. Safe to call again: the PC replaces its previous stream. */
     fun start(request: StreamRequest): Boolean {
+        synchronized(lock) { recoveries = 0; wasConnected = false; lastRequest = request; generation++; cancelGrace() }
+        return startStream(request)
+    }
+
+    private fun startStream(request: StreamRequest): Boolean {
         teardown(StreamStatus.Phase.IDLE, null, notifyPc = false)
         val id = UUID.randomUUID().toString()
         synchronized(lock) { streamId = id; haveRemoteOffer = false; pendingCandidates = mutableListOf() }
@@ -83,7 +102,7 @@ class StreamController(
 
     /** Leaves the stream; the pairing and the control session stay up (mouse, keyboard, files keep working). */
     fun stop() {
-        val id = synchronized(lock) { streamId }
+        val id = synchronized(lock) { lastRequest = null; generation++; cancelGrace(); streamId }
         if (id != null) port.send("stream.stop") { put("id", id) }
         teardown(StreamStatus.Phase.STOPPED, "stopped_by_user", notifyPc = false)
     }
@@ -96,7 +115,7 @@ class StreamController(
             try {
                 val cfg = kotlinx.coroutines.runBlocking { ice() }
                 val rtc = engine.createSession(cfg)
-                rtc.onState = { st -> onRtcState(st, cfg) }
+                rtc.onState = { st -> onRtcState(rtc, st, cfg) }
                 synchronized(lock) { if (streamId != id) { rtc.close(); return@Thread }; session = rtc }
                 val answer = rtc.answer(m.getValue("sdp").jsonPrimitive.content) { c ->
                     port.send("rtc.candidate") {
@@ -140,11 +159,41 @@ class StreamController(
         }
     }
 
-    private fun onRtcState(st: RtcState, cfg: IceConfig) {
-        if (st == RtcState.FAILED) {
-            // Say why, in terms of the network: with no relay a hostile NAT is the likely cause.
-            teardown(StreamStatus.Phase.ERROR, if (cfg.hasTurn) "ice_failed" else "ice_failed_no_relay")
+    private fun onRtcState(from: RtcSession, st: RtcState, cfg: IceConfig) {
+        if (synchronized(lock) { session !== from }) return // a stale callback from a connection already replaced
+        when (st) {
+            RtcState.CONNECTED -> synchronized(lock) { wasConnected = true; recoveries = 0; cancelGrace() }
+            RtcState.DISCONNECTED -> synchronized(lock) {
+                if (wasConnected && graceTimer == null) {
+                    graceTimer = timer.schedule(Runnable { recover(from) }, disconnectGraceMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+                }
+            }
+            RtcState.FAILED -> if (!recover(from)) {
+                // Say why, in terms of the network: with no relay a hostile NAT is the likely cause.
+                teardown(StreamStatus.Phase.ERROR, if (cfg.hasTurn) "ice_failed" else "ice_failed_no_relay")
+            }
+            else -> {}
         }
+    }
+
+    private fun cancelGrace() { graceTimer?.cancel(false); graceTimer = null }
+
+    /** Re-requests the stream after the media path died; false when it never worked or the retries are spent. */
+    private fun recover(from: RtcSession): Boolean {
+        val request = synchronized(lock) {
+            cancelGrace()
+            if (session !== from || !wasConnected || recoveries >= MAX_RECOVERIES) return false
+            recoveries++
+            lastRequest?.let { it to generation }
+        } ?: return false
+        val (req, gen) = request
+        publish(StreamStatus(StreamStatus.Phase.REQUESTING, "reconnecting"))
+        runCatching { from.close() }
+        timer.schedule(Runnable {
+            // A stop, a new start or the end of the session in the meantime cancels the retry.
+            if (synchronized(lock) { generation == gen }) startStream(req)
+        }, retryDelayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        return true
     }
 
     private fun teardown(phase: StreamStatus.Phase, reason: String?, notifyPc: Boolean = true) {
@@ -165,7 +214,10 @@ class StreamController(
 
     /** The session ended: release the media connection. */
     fun release() {
+        synchronized(lock) { lastRequest = null; generation++; cancelGrace() }
         subs.forEach { it.cancel() }
         teardown(StreamStatus.Phase.STOPPED, "session_ended", notifyPc = false)
     }
+
+    private companion object { const val MAX_RECOVERIES = 3 }
 }

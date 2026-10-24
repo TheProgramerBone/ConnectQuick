@@ -1,3 +1,4 @@
+using System.Net.NetworkInformation;
 using ConnectQuick.WindowsHost.Clipboard;
 using ConnectQuick.WindowsHost.Config;
 using ConnectQuick.WindowsHost.Diagnostics;
@@ -91,6 +92,9 @@ public sealed class HostRuntime : IAsyncDisposable
         var features = new IHostFeature[] { new ControlFeature(), Input, Clipboard, Media, Files, Power, Streaming };
         Sessions = new SessionManager(Client, Identity, Devices, features, Settings, Log, o.Approver);
 
+        Sessions.SessionStarted += _ => Client.SessionActive = true;
+        Sessions.SessionEnded += (_, _) => Client.SessionActive = Sessions.Active is not null;
+
         Client.Faulted += msg => Log.Warn("signaling", msg);
         Client.StateChanged += s => Log.Info("signaling", s.ToString());
     }
@@ -98,8 +102,20 @@ public sealed class HostRuntime : IAsyncDisposable
     /// <summary>Starts the signalling loop (connect, authenticate, reconnect) and the idle-session watchdog.</summary>
     public void Start()
     {
+        if (_run is null) NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
         _run ??= Client.RunForeverAsync(_cts.Token);
         _watchdog ??= new Timer(_ => Sessions.Watchdog(), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private long _lastNetNotify;
+
+    // Windows raises this in bursts when an adapter changes; reconnect once per burst.
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    {
+        var now = Environment.TickCount64;
+        if (now - Interlocked.Exchange(ref _lastNetNotify, now) < 3000) return;
+        Log.Info("signaling", "network change detected; reconnecting");
+        Client.NotifyNetworkChanged();
     }
 
     /// <summary>
@@ -118,6 +134,7 @@ public sealed class HostRuntime : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
         _cts.Cancel();
         Sessions.EndActive("host_shutdown");
         if (_watchdog is not null) await _watchdog.DisposeAsync();

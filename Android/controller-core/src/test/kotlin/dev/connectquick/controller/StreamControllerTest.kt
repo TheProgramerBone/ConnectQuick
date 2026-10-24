@@ -114,6 +114,39 @@ class StreamControllerTest {
     }
 
     @Test
+    fun a_stream_that_worked_asks_the_pc_again_after_the_network_changes() {
+        val (phone, pc) = LoopbackPort.pair()
+        val engine = FakeEngine()
+        val sc = StreamController(phone, { IceConfig.NONE }, engine, retryDelayMs = 50, disconnectGraceMs = 100)
+        sc.start(req)
+        pc.send("rtc.offer") { put("sdp", "O1") }
+        waitFor("first session") { engine.sessions.size == 1 }
+        val first = engine.sessions[0]
+        first.onState!!.invoke(RtcState.CONNECTED)
+
+        // Wi-Fi -> mobile data: stays DISCONNECTED past the grace period, so the phone re-requests.
+        first.onState!!.invoke(RtcState.DISCONNECTED)
+        waitFor("second stream.start") { phone.sentOfType("stream.start").size == 2 }
+        assertTrue(first.closed)
+        pc.send("rtc.offer") { put("sdp", "O2") }
+        waitFor("second session") { engine.sessions.size == 2 }
+        engine.sessions[1].onState!!.invoke(RtcState.CONNECTED)
+
+        // A brief DISCONNECTED that heals by itself must not restart anything.
+        engine.sessions[1].onState!!.invoke(RtcState.DISCONNECTED)
+        engine.sessions[1].onState!!.invoke(RtcState.CONNECTED)
+        Thread.sleep(300)
+        assertEquals(2, phone.sentOfType("stream.start").size)
+
+        // FAILED after having worked also recovers, but stopping cancels a pending retry.
+        engine.sessions[1].onState!!.invoke(RtcState.FAILED)
+        sc.stop()
+        Thread.sleep(300)
+        assertEquals(2, phone.sentOfType("stream.start").size)
+        assertEquals(StreamStatus.Phase.STOPPED, sc.status.phase)
+    }
+
+    @Test
     fun a_refusal_by_the_pc_surfaces_immediately_with_its_reason() {
         val (phone, pc, pair) = rig()
         val (sc, engine) = pair

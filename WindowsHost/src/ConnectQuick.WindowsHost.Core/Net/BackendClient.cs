@@ -30,7 +30,7 @@ public interface IHelloAuthenticator
 /// <item>connect / reconnect with exponential backoff + jitter (capped at 30 s) that only resets after a
 /// successful authentication, so a server that accepts sockets but rejects us is not hammered;</item>
 /// <item>the <c>hello</c> handshake when an <see cref="IHelloAuthenticator"/> is set;</item>
-/// <item>a 15 s heartbeat and dead-connection detection (nothing received for 40 s => abort and reconnect);</item>
+/// <item>a 15 s heartbeat and dead-connection detection (nothing received for 40 s => abort and reconnect), 5 s / 12 s while a session is live;</item>
 /// <item>isolation of handler failures: a throwing handler is reported through <see cref="Faulted"/>, it never
 /// kills the receive loop or the process;</item>
 /// <item>immediate reconnection on <see cref="NotifyNetworkChanged"/> (Wi-Fi &lt;-&gt; mobile data).</item>
@@ -41,6 +41,8 @@ public sealed class BackendClient : IAsyncDisposable
     public const int MaxInboundBytes = 128 * 1024;
     public static readonly TimeSpan DefaultHeartbeatInterval = TimeSpan.FromSeconds(15);
     public static readonly TimeSpan DefaultDeadAfter = TimeSpan.FromSeconds(40);
+    public static readonly TimeSpan DefaultActiveHeartbeatInterval = TimeSpan.FromSeconds(5);
+    public static readonly TimeSpan DefaultActiveDeadAfter = TimeSpan.FromSeconds(12);
     public static readonly TimeSpan AuthTimeout = TimeSpan.FromSeconds(15);
 
     private static readonly JsonSerializerOptions DecodeOptions = new() { PropertyNameCaseInsensitive = true };
@@ -64,6 +66,15 @@ public sealed class BackendClient : IAsyncDisposable
     public TimeSpan HeartbeatInterval { get; set; } = DefaultHeartbeatInterval;
     /// <summary>No traffic for this long means the link is dead (a partition leaves the socket open but silent) and it is torn down.</summary>
     public TimeSpan DeadAfter { get; set; } = DefaultDeadAfter;
+
+    /// <summary>Faster ping used while a control session is live, so a silent cut freezes the phone for seconds, not 40 s.</summary>
+    public TimeSpan ActiveHeartbeatInterval { get; set; } = DefaultActiveHeartbeatInterval;
+    public TimeSpan ActiveDeadAfter { get; set; } = DefaultActiveDeadAfter;
+    /// <summary>true while a control session is live; idle links keep the slower timings (battery, traffic).</summary>
+    public volatile bool SessionActive;
+
+    private TimeSpan EffectiveHeartbeat => SessionActive && ActiveHeartbeatInterval < HeartbeatInterval ? ActiveHeartbeatInterval : HeartbeatInterval;
+    private TimeSpan EffectiveDeadAfter => SessionActive && ActiveDeadAfter < DeadAfter ? ActiveDeadAfter : DeadAfter;
 
     /// <summary>Set before <see cref="RunForeverAsync"/>. Without it the caller must answer the challenge itself.</summary>
     public IHelloAuthenticator? Authenticator { get; set; }
@@ -325,14 +336,14 @@ public sealed class BackendClient : IAsyncDisposable
                     return;
                 }
                 var sinceRx = Stopwatch.GetElapsedTime(Interlocked.Read(ref _lastRxTicks));
-                if (sinceRx > DeadAfter)
+                if (sinceRx > EffectiveDeadAfter)
                 {
                     Faulted?.Invoke("backend connection is dead (no traffic); reconnecting");
                     ws.Abort();
                     onDead();
                     return;
                 }
-                if (_state == SignalingState.Ready && sinceRx >= HeartbeatInterval - TimeSpan.FromSeconds(1))
+                if (_state == SignalingState.Ready && sinceRx >= EffectiveHeartbeat - TimeSpan.FromSeconds(1))
                 {
                     _pingSentTicks = Stopwatch.GetTimestamp();
                     try

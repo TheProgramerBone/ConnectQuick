@@ -1,0 +1,72 @@
+name: CI
+
+# Runs on Windows so the WinForms host (the one project the cloud sandbox cannot compile) is built for real.
+# Suites run one after another on purpose: the multi-process scenarios are timing-sensitive.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Backend (typecheck + tests)
+        working-directory: Backend
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+
+      - name: Windows host (full solution incl. WinForms app)
+        run: dotnet build WindowsHost/ConnectQuick.WindowsHost.sln -c Release --nologo
+
+      - name: Windows host tests
+        run: dotnet test WindowsHost/src/ConnectQuick.WindowsHost.Tests -c Release --no-build --nologo
+
+      - name: Android controller-core tests (JVM)
+        working-directory: Android
+        run: .\gradlew.bat -p controller-core test --console=plain
+
+      - name: Android debug APK
+        working-directory: Android
+        run: .\gradlew.bat assembleDebug --console=plain
+
+      - name: Cross-platform scenarios
+        shell: bash
+        run: |
+          dotnet build WindowsHost/src/ConnectQuick.WindowsHost.HostHarness -c Release --nologo
+          cd Android
+          CP=$(./gradlew.bat -p controller-core testClasses printHarnessClasspath -q)
+          cd ../Tests
+          npm ci
+          CQ_CONTROLLER_CP="$CP" npm test
+
+      - name: Publish the Windows host
+        run: dotnet publish WindowsHost/src/ConnectQuick.WindowsHost/ConnectQuick.WindowsHost.csproj -c Release -r win-x64 --self-contained -o artifacts/windows --nologo
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: connectquick-windows-host
+          path: artifacts/windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: connectquick-debug-apk
+          path: Android/app/build/outputs/apk/debug/*.apk
