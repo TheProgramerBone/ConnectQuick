@@ -160,8 +160,9 @@ destructive dialogs.
   public meeting point: backend (systemd, `TRUST_PROXY=1`) behind Caddy (automatic HTTPS on `<ip>.sslip.io`, wss on 443) and
   coturn (REST secret shared with the backend, UDP/TCP 3478, relay ports 49160–49200, private peers denied, `max-bps` 500 KB/s;
   Standard network tier: 200 GB/month free egress per region). `Scripts/usar-servidor.ps1` repoints an installed PC (`relay.txt`) and disables the
-  local server; guide in `Docs/SERVIDOR_GRATIS_GOOGLE_CLOUD.md`. Only syntax-checked (`bash -n`) and the backend started with
-  that environment; never run on a real VM.
+  local server; guide in `Docs/SERVIDOR_GRATIS_GOOGLE_CLOUD.md`. **Confirmed by the owner on real hardware (24 Oct 2026)**:
+  GCP e2-micro (us-central1, Standard network tier, static IP) set up with the guide; PC repointed with `usar-servidor.ps1`;
+  phone re-paired and everything worked from mobile data (phone and PC on different networks), as reported by the owner.
 **Verified by**: wording/state logic is unit-tested (`LinkPresentationTest`, `StreamTextsTest`); both UIs compile.
 **Not verified**: appearance, layout at different DPIs/font scales, TalkBack/Narrator behaviour, performance, and every
 interaction on a real screen. Expect visual polish work once they are run.

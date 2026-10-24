@@ -39,6 +39,8 @@ Docs/         STATUS, ARCHITECTURE, SECURITY, GUIA_DE_PRUEBAS, COMPILAR_Y_CONFIR
   — phones get the `turns:` URL, hosts get none (relay is on the host's machine). Unverified against real libwebrtc/SIPSorcery.
 - **Own cloud server** (owner's choice, Oct 2026: Google Cloud free tier, no Tailscale): `Deploy/gcp/setup.sh` (backend + Caddy +
   coturn on one e2-micro, `<ip>.sslip.io`), `Scripts/usar-servidor.ps1` repoints the PC; guide `Docs/SERVIDOR_GRATIS_GOOGLE_CLOUD.md`.
+  **Working in production for the owner since 24 Oct 2026** (server `wss://35-209-191-155.sslip.io`; owner confirmed phone on mobile data ↔ PC works).
+  Server updates: `sudo bash /opt/connectquick/Deploy/gcp/update.sh` on the VM after pushing to `main`.
 - **Scaling decision** (measured, `Backend/scripts/loadtest.ts`): single instance; ~18k relayed frames/s at 500 sessions = 0.56 core/143 MB. No Redis/multi-instance. Design for later (route by hostId, Postgres) is in `Docs/ARCHITECTURE.md`.
 
 ## State at hand-off (be honest about it)
