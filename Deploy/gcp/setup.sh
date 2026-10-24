@@ -14,9 +14,9 @@ set -euo pipefail
 NODE_VERSION="22.22.0"            # >= 22.18 runs the TypeScript sources directly
 TURN_MIN_PORT=49160
 TURN_MAX_PORT=49200
-# Cap per relayed stream (bytes/s). The free tier includes ~1 GB/month of outbound traffic; ~150 KB/s (1.2 Mbit/s)
-# fits the phone's "Ahorro"/"Auto" profiles and makes that quota last ~2 h of relayed video. 0 = no cap.
-TURN_MAX_BPS="${TURN_MAX_BPS:-150000}"
+# Cap per relayed stream (bytes/s). With the Standard network tier the console shows 200 GB/month of free
+# egress per region; 500 KB/s (4 Mbit/s) makes that ~100 h of relayed video a month. 0 = no cap.
+TURN_MAX_BPS="${TURN_MAX_BPS:-500000}"
 
 if [[ $EUID -ne 0 ]]; then echo "Ejecuta con sudo: sudo bash $0" >&2; exit 1; fi
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

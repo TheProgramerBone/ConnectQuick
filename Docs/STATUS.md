@@ -158,8 +158,8 @@ destructive dialogs.
   `--tls-terminated-tcp` on the owner's Tailscale version), SIPSorcery reaching the relay through its host candidates.
 - **Own free cloud server (Oct 2026)**: `Deploy/gcp/setup.sh` turns a Google Cloud free-tier e2-micro (Debian 12) into the
   public meeting point: backend (systemd, `TRUST_PROXY=1`) behind Caddy (automatic HTTPS on `<ip>.sslip.io`, wss on 443) and
-  coturn (REST secret shared with the backend, UDP/TCP 3478, relay ports 49160–49200, private peers denied, `max-bps` 150 KB/s
-  to respect the 1 GB/month free egress). `Scripts/usar-servidor.ps1` repoints an installed PC (`relay.txt`) and disables the
+  coturn (REST secret shared with the backend, UDP/TCP 3478, relay ports 49160–49200, private peers denied, `max-bps` 500 KB/s;
+  Standard network tier: 200 GB/month free egress per region). `Scripts/usar-servidor.ps1` repoints an installed PC (`relay.txt`) and disables the
   local server; guide in `Docs/SERVIDOR_GRATIS_GOOGLE_CLOUD.md`. Only syntax-checked (`bash -n`) and the backend started with
   that environment; never run on a real VM.
 **Verified by**: wording/state logic is unit-tested (`LinkPresentationTest`, `StreamTextsTest`); both UIs compile.
