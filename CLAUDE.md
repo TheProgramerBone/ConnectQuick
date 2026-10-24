@@ -37,6 +37,8 @@ Docs/         STATUS, ARCHITECTURE, SECURITY, GUIA_DE_PRUEBAS, COMPILAR_Y_CONFIR
 - **Different networks**: control always rides the backend; video needs TURN when there is no direct path. The backend embeds a
   TURN server (`Backend/src/turn/`, enabled by `TURN_EMBEDDED_PORT`) that `build-all.ps1 -Funnel` publishes on Funnel port 10000 (TLS)
   — phones get the `turns:` URL, hosts get none (relay is on the host's machine). Unverified against real libwebrtc/SIPSorcery.
+- **Own cloud server** (owner's choice, Oct 2026: Google Cloud free tier, no Tailscale): `Deploy/gcp/setup.sh` (backend + Caddy +
+  coturn on one e2-micro, `<ip>.sslip.io`), `Scripts/usar-servidor.ps1` repoints the PC; guide `Docs/SERVIDOR_GRATIS_GOOGLE_CLOUD.md`.
 - **Scaling decision** (measured, `Backend/scripts/loadtest.ts`): single instance; ~18k relayed frames/s at 500 sessions = 0.56 core/143 MB. No Redis/multi-instance. Design for later (route by hostId, Postgres) is in `Docs/ARCHITECTURE.md`.
 
 ## State at hand-off (be honest about it)

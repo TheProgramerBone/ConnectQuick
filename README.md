@@ -29,6 +29,8 @@ Docs/        Architecture, security, status, test guide
   WebRTC while control rides the encrypted relay session, scaling measurements, how to run TURN.
 - [`Docs/SECURITY.md`](Docs/SECURITY.md) — device identity, pairing, what the relay can and
   cannot see, what's hardened today versus still open.
+- [`Docs/SERVIDOR_GRATIS_GOOGLE_CLOUD.md`](Docs/SERVIDOR_GRATIS_GOOGLE_CLOUD.md) — (Spanish) free Google Cloud
+  server so PC and phone connect from any network without Tailscale (`Deploy/gcp/setup.sh`, `Scripts/usar-servidor.ps1`).
 - [`Docs/PENDIENTES.md`](Docs/PENDIENTES.md) — open work and a plan per item (read this to resume).
 - [`Docs/STATUS.md`](Docs/STATUS.md) — what is real, what has not been run on real hardware, what's next.
 - [`Docs/GUIA_DE_PRUEBAS.md`](Docs/GUIA_DE_PRUEBAS.md) — step-by-step (in Spanish) to pair a real
