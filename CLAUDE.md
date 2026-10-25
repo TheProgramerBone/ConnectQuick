@@ -51,8 +51,9 @@ Automated and green: Backend 104 tests · .NET 156 · Kotlin controller-core 110
 `./gradlew assembleDebug` and `./gradlew test` were **never run** in the sandbox (Gradle plugin resolution was blocked). Expect first-build errors on the owner's PC. The owner started running
 `Scripts/build-android.ps1 -Test` at the end of the session (output seen so far was normal Gradle progress; result unknown). `Docs/COMPILAR_Y_CONFIRMAR.md` §5 is the checklist of what the first real run must confirm.
 
-**Branch policy (owner's standing instruction): always work directly on `main`** — commit and push to `main`, no feature branches or PRs unless the owner asks, so the IDE (IntelliJ) never needs a branch switch.
-History: the first session developed on `claude/intelligent-newton-upxevj`; at the end it was fast-forwarded into `main`. If a cloud session is assigned a different branch by tooling, still tell the owner and merge to `main` when they agree.
+**Branch policy (owner's standing instruction, reconfirmed 25 Oct 2026): ALWAYS push everything to `main`** — commit and push to `main`, no feature branches or PRs unless the owner asks, so the IDE (IntelliJ) never needs a branch switch.
+This holds even when cloud tooling assigns a `claude/*` branch: work there if needed, then merge/fast-forward into `main` and push `main` in the same turn, without asking again.
+History: the first session developed on `claude/intelligent-newton-upxevj`; at the end it was fast-forwarded into `main`.
 
 ## How to verify things (commands)
 
