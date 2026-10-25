@@ -92,6 +92,8 @@ un Host concreto, que solo se concede a través del flujo de pairing (tabla `aut
 | `pairing.result`                | BE → Ctrl  | Resultado final (éxito + datos del Host, o rechazo/expiración).          |
 | `pairing.revoke`                | Host → BE  | Revoca un dispositivo ya autorizado.                                     |
 | `pairing.revoked`               | BE → Ctrl  | Notifica al dispositivo revocado (si está conectado) y cierra su sesión. |
+| `registry.sync`                 | Host → BE  | El Host declara el conjunto **completo** de teléfonos en los que confía (`devices`: `deviceId`, `devicePub`, `deviceName`, `permissions`). Permite que un segundo relay (el del propio PC en la LAN, o un servidor nuevo) atienda a teléfonos vinculados en otro sin repetir el QR. Autoritativo: los teléfonos que ese backend conocía para el Host y no aparecen se revocan. Cada `deviceId` debe derivar de su `devicePub`. Solo rol Host, siempre sobre su propio `hostId`; el Host sigue verificando cada `session.connect` por su cuenta (§9). |
+| `registry.synced`               | BE → Host  | Acuse: `authorized` y `revoked` (cantidades). |
 
 ### Presencia, sesión E2E e ICE (ver §7 y §9)
 
@@ -135,9 +137,15 @@ Contenido (JSON compacto, codificado en el QR como texto):
   "hostPub": "base64url(ed25519 pub, 32 bytes)",
   "hostEphPub": "base64url(x25519 pub, 32 bytes)",
   "nonce": "base64url(16 bytes aleatorios)",
-  "exp": 1735689660
+  "exp": 1735689660,
+  "relays": ["ws://192.168.1.50:8443", "wss://relay.example.com/ws"]
 }
 ```
+
+`relay` es donde ocurre este pairing. `relays` (opcional, máx. 4 en `ctl.caps`) lista, de mejor a peor, todas las
+direcciones por las que se llega a ese PC; el teléfono las prueba a la vez en cada conexión y usa la primera
+que responde (en casa, la LAN; fuera, la nube). El Host también la repite dentro de `ctl.caps` (cifrado)
+para que teléfonos ya vinculados la aprendan sin volver a escanear.
 
 **Nunca contiene**: contraseñas, claves privadas, tokens permanentes o reutilizables. `exp` es
 informativo para la UI; el backend aplica el TTL de forma autoritativa e independiente.
@@ -253,7 +261,7 @@ ajustes locales y responde `ctl.error` `forbidden` / `disabled_by_host`.
 |---|---|---|---|
 | `ctl.ping` | ↔ | — | `n` |
 | `ctl.pong` | ↔ | — | `n` |
-| `ctl.caps` | H→C | — | `hostVersion`, `permissions`, `features`, `screen`?, `maxFileBytes`?, `clipboardSync`? |
+| `ctl.caps` | H→C | — | `hostVersion`, `permissions`, `features`, `screen`?, `maxFileBytes`?, `clipboardSync`?, `relays`? |
 | `ctl.error` | H→C | — | `id`?, `code`, `message` |
 | `input.mouse_move` | C→H | mouse | `dx`, `dy` |
 | `input.mouse_abs` | C→H | mouse | `x`, `y` |

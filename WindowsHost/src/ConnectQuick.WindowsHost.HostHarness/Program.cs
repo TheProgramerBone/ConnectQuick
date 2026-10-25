@@ -39,6 +39,7 @@ settingsPreset.Update(s =>
 await using var host = new HostRuntime(new HostRuntimeOptions
 {
     RelayUri = new Uri(relay),
+    ExtraRelays = Environment.GetEnvironmentVariable("CQ_EXTRA_RELAYS")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
     HostName = hostName,
     SeedStore = seedStore,
     Adapters = new HostAdapters(injector, clipboard, media, power),

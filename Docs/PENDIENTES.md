@@ -41,7 +41,10 @@ Análisis completo hecho el 24-oct-2026 leyendo todo el código de conexión. Or
   los 12 s (fuera de sesión se queda como está, por batería/tráfico).
 - **Ojo:** C# no se puede compilar en el sandbox de la nube (no hay `dotnet`); el dueño compila primero.
 
-### A2. Lista de relays, el más rápido primero — *medio*
+### A2. Lista de relays, el más rápido primero — *medio* — ✅ escrito 25-oct (etapas 1–3 + script), **pendiente de verificar con el CI y en real**
+- Hecho: backend `registry.sync` (el PC copia sus teléfonos a otro relay; probado, 106 tests); el PC se conecta a varios relays (`relay.txt` línea 1 = principal, líneas 2+ = extra, p. ej. `ws://{lan}:8443`); el QR y `ctl.caps` llevan `relays`; el móvil prueba todas a la vez (`BackendClient.pickUrl`) y usa la primera que responde; los teléfonos ya vinculados aprenden la lista dentro de la sesión. `Scripts/usar-servidor.ps1 -ConServidorLocal` lo activa. Escenario cruzado nuevo: `Tests/integration/relays.test.ts`.
+- Límites conocidos: el APK de publicación solo permite `wss://`, así que la ruta LAN `ws://` solo funciona en el APK debug; si el relay local contesta pero el PC no está conectado a él, el móvil lo reintenta en bucle; el vídeo (ICE) sigue pidiendo su configuración al relay principal.
+- Plan original (para referencia):
 - **Problema:** un solo relay fijado al vincular (`PairedHost.relay`, `relay.txt`). En casa todo da la vuelta por Google
   Cloud; si cambia la dirección del servidor hay que volver a vincular; no hay respaldo.
 - **Plan:** el QR lleva varias direcciones (p. ej. LAN + nube); el móvil las prueba a la vez y usa la primera que

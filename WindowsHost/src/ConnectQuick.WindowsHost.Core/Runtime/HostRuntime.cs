@@ -22,6 +22,8 @@ public sealed class HostRuntimeOptions
 {
     public required Uri RelayUri { get; init; }
     public required string HostName { get; init; }
+    /// <summary>More relays to serve besides <see cref="RelayUri"/> (see <see cref="HostConfig.ExtraRelays"/>). Null/empty: single relay, as before.</summary>
+    public IReadOnlyList<string>? ExtraRelays { get; init; }
     public required ISeedStore SeedStore { get; init; }
     public required HostAdapters Adapters { get; init; }
     public string? DevicesPath { get; init; }
@@ -51,6 +53,8 @@ public sealed class HostRuntime : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _run;
     private Timer? _watchdog;
+    private readonly List<BackendClient> _extraClients = new();
+    private readonly List<Task> _extraRuns = new();
 
     public HostEventLog Log { get; }
     public HostSettingsStore Settings { get; }
@@ -73,7 +77,7 @@ public sealed class HostRuntime : IAsyncDisposable
     {
         Log = new HostEventLog(o.LogPath);
         Settings = new HostSettingsStore(o.SettingsPath);
-        Config = new HostConfig(o.RelayUri, o.HostName);
+        Config = new HostConfig(o.RelayUri, o.HostName, o.ExtraRelays);
         Identity = DeviceIdentity.LoadOrCreate(o.SeedStore);
         Devices = new AuthorizedDeviceStore(o.DevicesPath);
         Client = new BackendClient(o.RelayUri);
@@ -92,6 +96,21 @@ public sealed class HostRuntime : IAsyncDisposable
         var features = new IHostFeature[] { new ControlFeature(), Input, Clipboard, Media, Files, Power, Streaming };
         Sessions = new SessionManager(Client, Identity, Devices, features, Settings, Log, o.Approver);
 
+        // Extra relays (the PC's own LAN relay): same identity, same sessions, one live session overall.
+        // Each relay keeps its own registry of paired phones, so the PC tells it which ones it trusts.
+        foreach (var uri in Config.HostExtraRelayUris)
+        {
+            var extra = new BackendClient(uri) { Authenticator = new HostHello(Identity, Config) };
+            if (o.HeartbeatInterval is { } hb2) extra.HeartbeatInterval = hb2;
+            if (o.DeadAfter is { } dead2) extra.DeadAfter = dead2;
+            extra.Faulted += msg => Log.Warn($"signaling[{uri.Host}:{uri.Port}]", msg);
+            extra.ConnectionChanged += ready => { if (ready) _ = SyncRegistryAsync(extra); };
+            Sessions.AddRelay(extra);
+            _extraClients.Add(extra);
+        }
+        Sessions.RelaysProvider = () => Config.PhoneRelays;
+        Devices.Changed += () => { foreach (var c in _extraClients) _ = SyncRegistryAsync(c); };
+
         Sessions.SessionStarted += _ => Client.SessionActive = true;
         Sessions.SessionEnded += (_, _) => Client.SessionActive = Sessions.Active is not null;
 
@@ -103,8 +122,33 @@ public sealed class HostRuntime : IAsyncDisposable
     public void Start()
     {
         if (_run is null) NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+        if (_run is null) foreach (var c in _extraClients) _extraRuns.Add(c.RunForeverAsync(_cts.Token));
         _run ??= Client.RunForeverAsync(_cts.Token);
         _watchdog ??= new Timer(_ => Sessions.Watchdog(), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>Tells one relay exactly which phones this PC trusts (authoritative; see backend <c>registry.sync</c>).</summary>
+    private async Task SyncRegistryAsync(BackendClient client)
+    {
+        try
+        {
+            var devices = Devices.All
+                .Where(d => d.DevicePub is not null)
+                .Select(d => new Dictionary<string, object?>
+                {
+                    ["deviceId"] = d.DeviceId,
+                    ["devicePub"] = d.DevicePub,
+                    ["deviceName"] = d.DeviceName,
+                    ["permissions"] = PairingPermissions.Canonical(d.Permissions).ToList(),
+                })
+                .Take(64)
+                .ToList();
+            await client.SendAsync("registry.sync", new Dictionary<string, object?> { ["devices"] = devices }).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Net.WebSockets.WebSocketException or OperationCanceledException)
+        {
+            // Not connected right now; the sync is repeated on the next successful connection.
+        }
     }
 
     private long _lastNetNotify;
@@ -116,6 +160,7 @@ public sealed class HostRuntime : IAsyncDisposable
         if (now - Interlocked.Exchange(ref _lastNetNotify, now) < 3000) return;
         Log.Info("signaling", "network change detected; reconnecting");
         Client.NotifyNetworkChanged();
+        foreach (var c in _extraClients) c.NotifyNetworkChanged();
     }
 
     /// <summary>
@@ -139,6 +184,8 @@ public sealed class HostRuntime : IAsyncDisposable
         Sessions.EndActive("host_shutdown");
         if (_watchdog is not null) await _watchdog.DisposeAsync();
         if (_run is not null) { try { await _run.ConfigureAwait(false); } catch (OperationCanceledException) { } }
+        foreach (var r in _extraRuns) { try { await r.ConfigureAwait(false); } catch (OperationCanceledException) { } }
+        foreach (var c in _extraClients) await c.DisposeAsync();
         await Client.DisposeAsync();
     }
 }

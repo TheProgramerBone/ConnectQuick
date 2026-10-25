@@ -370,6 +370,79 @@
         }
       }
     },
+    "registry_sync": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "devices"
+      ],
+      "properties": {
+        "devices": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "deviceId",
+              "devicePub",
+              "deviceName",
+              "permissions"
+            ],
+            "properties": {
+              "deviceId": {
+                "type": "string",
+                "minLength": 16,
+                "maxLength": 64
+              },
+              "devicePub": {
+                "type": "string",
+                "contentEncoding": "base64url"
+              },
+              "deviceName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "permissions": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "remote_desktop",
+                    "mouse",
+                    "keyboard",
+                    "clipboard",
+                    "files",
+                    "media",
+                    "apps",
+                    "power"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "registry_synced": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorized",
+        "revoked"
+      ],
+      "properties": {
+        "authorized": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revoked": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
     "presence_update": {
       "type": "object",
       "additionalProperties": false,

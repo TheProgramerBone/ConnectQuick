@@ -88,6 +88,7 @@ public sealed class PairingCoordinator : IHelloAuthenticator
         {
             PairingId = pairingId,
             Relay = _config.RelayUri.ToString(),
+            Relays = _config.PhoneRelays,
             HostId = _identity.DeviceId,
             HostName = _config.HostName,
             HostPub = _identity.IdentityPub,
@@ -140,7 +141,7 @@ public sealed class PairingCoordinator : IHelloAuthenticator
 
         if (approved)
         {
-            _deviceStore.Add(new AuthorizedDevice(request.DeviceId, request.DeviceName, permissions, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+            _deviceStore.Add(new AuthorizedDevice(request.DeviceId, request.DeviceName, permissions, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), request.IdentityPub));
         }
     }
 

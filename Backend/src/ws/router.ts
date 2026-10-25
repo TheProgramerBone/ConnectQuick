@@ -9,6 +9,7 @@ import {
   handlePairingInit,
   handlePairingDecision,
   handlePairingRevoke,
+  handleRegistrySync,
 } from "./handlers/pairing.ts";
 import {
   handleSessionAccept,
@@ -25,7 +26,7 @@ type Handler = (ctx: AppContext, conn: Connection, envelope: Envelope) => void;
 /**
  * Only these types may ever originate from a client. Everything else in the envelope schema's
  * `type` enum (hello.challenge, hello.ack, heartbeat.pong, error, pairing.created,
- * pairing.incoming, pairing.result, pairing.revoked, presence.update) is backend/relay-only —
+ * pairing.incoming, pairing.result, pairing.revoked, registry.synced, presence.update) is backend/relay-only —
  * a client sending one is rejected here, never silently accepted.
  */
 const CLIENT_ORIGINATED_HANDLERS: Record<string, Handler> = {
@@ -35,6 +36,7 @@ const CLIENT_ORIGINATED_HANDLERS: Record<string, Handler> = {
   "pairing.init": handlePairingInit,
   "pairing.decision": handlePairingDecision,
   "pairing.revoke": handlePairingRevoke,
+  "registry.sync": handleRegistrySync,
   "session.connect": handleSessionConnect,
   "session.state": handleSessionState,
   "session.accept": handleSessionAccept,

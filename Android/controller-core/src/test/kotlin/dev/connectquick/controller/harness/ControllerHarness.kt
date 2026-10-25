@@ -199,7 +199,7 @@ fun main(): Unit = runBlocking {
             when (result) {
                 is PairingOutcome.Success -> {
                     pairedPermissions.clear(); pairedPermissions += result.permissions
-                    host = PairedHost(result.hostId, result.hostName, qr.hostPub, qr.relay, result.permissions, System.currentTimeMillis())
+                    host = PairedHost(result.hostId, result.hostName, qr.hostPub, qr.relay, result.permissions, System.currentTimeMillis(), qr.relays)
                     buildJsonObject { put("hostId", result.hostId); put("sas", sas); put("permissions", buildJsonArray { result.permissions.forEach { add(JsonPrimitive(it)) } }) }
                 }
                 is PairingOutcome.Failure -> buildJsonObject { put("error", result.reason) }

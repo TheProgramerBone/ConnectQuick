@@ -34,7 +34,6 @@ public sealed class SessionManager
     private static readonly TimeSpan MaxSkew = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan IdleLimit = TimeSpan.FromSeconds(45);
 
-    private readonly BackendClient _client;
     private readonly DeviceIdentity _identity;
     private readonly AuthorizedDeviceStore _devices;
     private readonly IReadOnlyList<IHostFeature> _features;
@@ -44,6 +43,10 @@ public sealed class SessionManager
     private readonly ConcurrentDictionary<string, DateTimeOffset> _seenSessionIds = new();
     private readonly object _lock = new();
     private HostSession? _active;
+    private BackendClient? _activeClient; // the relay carrying the live session
+
+    /// <summary>Relays to tell a connecting phone about (inside the encrypted <c>ctl.caps</c>); null/empty: say nothing.</summary>
+    public Func<IReadOnlyList<string>?>? RelaysProvider { get; set; }
 
     public HostSession? Active { get { lock (_lock) return _active; } }
 
@@ -54,7 +57,6 @@ public sealed class SessionManager
         BackendClient client, DeviceIdentity identity, AuthorizedDeviceStore devices,
         IReadOnlyList<IHostFeature> features, HostSettingsStore settings, HostEventLog log, IConnectionApprover? approver = null)
     {
-        _client = client;
         _identity = identity;
         _devices = devices;
         _features = features;
@@ -62,16 +64,28 @@ public sealed class SessionManager
         _log = log;
         _approver = approver ?? new AlwaysApprove();
 
-        _client.OnAsync("session.connect", OnSessionConnectAsync);
-        _client.On("session.data", OnSessionData);
-        _client.On("session.end", OnSessionEnd);
-        _client.ConnectionChanged += ready =>
+        AddRelay(client);
+    }
+
+    /// <summary>
+    /// Serves sessions arriving through one more relay (the PC's own LAN relay next to the cloud one).
+    /// There is still a single session at a time, whichever relay it came in by.
+    /// </summary>
+    public void AddRelay(BackendClient client)
+    {
+        client.OnAsync("session.connect", p => OnSessionConnectAsync(client, p));
+        client.On("session.data", OnSessionData);
+        client.On("session.end", OnSessionEnd);
+        client.ConnectionChanged += ready =>
         {
             // The relay IS the data path: without the signalling link there is no session, so
             // release everything now instead of leaving keys held for a phone that cannot reach us.
-            if (!ready) EndActive("signaling_lost");
+            // A link that is not carrying the live session may drop without disturbing it.
+            if (!ready && ReferenceEquals(ActiveClient, client)) EndActive("signaling_lost");
         };
     }
+
+    private BackendClient? ActiveClient { get { lock (_lock) return _activeClient; } }
 
     /// <summary>User revoked the device on the PC: cut its live session immediately.</summary>
     public void EndSessionsFor(string deviceId, string reason)
@@ -96,21 +110,21 @@ public sealed class SessionManager
             if (kv.Value < cutoff) _seenSessionIds.TryRemove(kv.Key, out _);
     }
 
-    private async Task OnSessionConnectAsync(JsonElement p)
+    private async Task OnSessionConnectAsync(BackendClient client, JsonElement p)
     {
         var sessionId = p.GetProperty("sessionId").GetString()!;
         try
         {
-            await HandleConnectAsync(sessionId, p).ConfigureAwait(false);
+            await HandleConnectAsync(client, sessionId, p).ConfigureAwait(false);
         }
         catch (RejectException r)
         {
             _log.Warn("session", $"rejected connect: {r.Reason}");
-            await _client.TrySendAsync("session.reject", new() { ["sessionId"] = sessionId, ["reason"] = r.Reason }).ConfigureAwait(false);
+            await client.TrySendAsync("session.reject", new() { ["sessionId"] = sessionId, ["reason"] = r.Reason }).ConfigureAwait(false);
         }
     }
 
-    private async Task HandleConnectAsync(string sessionId, JsonElement p)
+    private async Task HandleConnectAsync(BackendClient client, string sessionId, JsonElement p)
     {
         var hostId = p.GetProperty("hostId").GetString()!;
         var ephPub = p.GetProperty("ephPub").GetString()!;
@@ -136,6 +150,10 @@ public sealed class SessionManager
         if (paired is null) throw new RejectException("not_paired");
         var message = Encoding.UTF8.GetBytes(SessionCrypto.ConnectMessage(sessionId, hostId, deviceId, ephPub, issuedAt));
         if (!CryptoUtil.VerifyEd25519(identityPub, message, sig)) throw new RejectException("bad_signature");
+
+        // Phones paired before the host kept their public keys: remember it now (it just proved itself
+        // by signature), so the PC's other relays can be told about this phone too.
+        if (paired.DevicePub is null) { paired = paired with { DevicePub = identityPub }; _devices.Add(paired); }
 
         if (_settings.Current.RequireApprovalPerSession)
         {
@@ -163,17 +181,17 @@ public sealed class SessionManager
         var channel = SessionChannel.ForHost(sessionId, keys);
         var session = new HostSession(
             sessionId, deviceId, paired.DeviceName, effective, channel, _features,
-            (seq, ct) => _client.SendAsync("session.data", new() { ["sessionId"] = sessionId, ["seq"] = seq, ["ct"] = ct }),
+            (seq, ct) => client.SendAsync("session.data", new() { ["sessionId"] = sessionId, ["seq"] = seq, ["ct"] = ct }),
             _settings, _log);
         session.Ended += (s, reason) =>
         {
-            lock (_lock) if (ReferenceEquals(_active, s)) _active = null;
-            _ = _client.TrySendAsync("session.end", new() { ["sessionId"] = s.SessionId, ["reason"] = Truncate(reason) });
+            lock (_lock) if (ReferenceEquals(_active, s)) { _active = null; _activeClient = null; }
+            _ = client.TrySendAsync("session.end", new() { ["sessionId"] = s.SessionId, ["reason"] = Truncate(reason) });
             SessionEnded?.Invoke(s, reason);
         };
-        lock (_lock) _active = session;
+        lock (_lock) { _active = session; _activeClient = client; }
 
-        await _client.SendAsync("session.accept", new()
+        await client.SendAsync("session.accept", new()
         {
             ["sessionId"] = sessionId,
             ["ephPub"] = hostEphPub,
@@ -187,14 +205,16 @@ public sealed class SessionManager
 
         // First encrypted frame: tells the phone what this PC offers. A phone that can open it has
         // proven it derived the same keys (key confirmation).
-        await session.SendAsync("ctl.caps", new()
+        var caps = new Dictionary<string, object?>
         {
             ["hostVersion"] = Config.HostConfig.ClientVersion,
             ["permissions"] = effective,
             ["features"] = session.FeatureNames.ToList(),
             ["maxFileBytes"] = _settings.Current.MaxFileBytes,
             ["clipboardSync"] = _settings.Current.ClipboardAutoPushToController,
-        }).ConfigureAwait(false);
+        };
+        if (RelaysProvider?.Invoke() is { Count: > 0 } relays) caps["relays"] = relays.ToList();
+        await session.SendAsync("ctl.caps", caps).ConfigureAwait(false);
     }
 
     private void OnSessionData(JsonElement p)

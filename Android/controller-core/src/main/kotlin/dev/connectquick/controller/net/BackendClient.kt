@@ -63,6 +63,13 @@ class BackendClient(
     private val deadAfterMs: Long = DEAD_AFTER_MS,
 ) {
     @Volatile var authenticator: HelloAuthenticator? = null
+
+    /**
+     * Other relays that reach the same PC (e.g. the PC's own LAN relay next to the cloud one). On every
+     * connection attempt all of them and [url] are tried at once and the first to answer is used, so at
+     * home the control stays on the local network and anywhere else it falls back to the cloud with no delay.
+     */
+    @Volatile var alternateUrls: List<String> = emptyList()
     @Volatile var state: SignalingState = SignalingState.DISCONNECTED
         private set
     @Volatile var lastRttMs: Int = -1
@@ -145,12 +152,34 @@ class BackendClient(
         abortCurrent?.invoke()
     }
 
+    /** The first reachable relay among [alternateUrls] and [url] (which is also the fallback when none answers in time). */
+    private suspend fun pickUrl(): String {
+        val candidates = (alternateUrls + url).distinct()
+        if (candidates.size < 2) return url
+        val winner = CompletableDeferred<String>()
+        val probes = candidates.map { candidate ->
+            val request = runCatching { Request.Builder().url(candidate).build() }.getOrNull() ?: return@map null
+            httpClient.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    winner.complete(candidate)
+                    webSocket.cancel()
+                }
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {} // unreachable here: another one wins
+            })
+        }
+        try {
+            return withTimeoutOrNull(PROBE_TIMEOUT_MS) { winner.await() } ?: url
+        } finally {
+            probes.forEach { it?.cancel() }
+        }
+    }
+
     private suspend fun connectOnce(): Boolean = coroutineScope {
         val closed = CompletableDeferred<Unit>()
         var authenticated = false
         lastRxNanos.set(System.nanoTime())
         setState(SignalingState.CONNECTING)
-        val request = Request.Builder().url(url).build()
+        val request = Request.Builder().url(pickUrl()).build()
         val ws = httpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 socket = webSocket
@@ -286,6 +315,7 @@ class BackendClient(
     }
 
     companion object {
+        const val PROBE_TIMEOUT_MS = 3_000L
         const val HEARTBEAT_MS = 15_000L
         const val DEAD_AFTER_MS = 40_000L
         const val AUTH_TIMEOUT_MS = 15_000L

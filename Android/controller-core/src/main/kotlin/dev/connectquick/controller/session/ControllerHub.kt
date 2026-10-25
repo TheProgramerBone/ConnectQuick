@@ -65,6 +65,9 @@ class ControllerHub(
     /** Text the PC pushed (clipboard auto-sync); the app writes it to the system clipboard. */
     @Volatile var onRemoteClipboard: ((String) -> Unit)? = null
 
+    /** The PC reported a different list of relays; the app stores it so the next launch already knows them. */
+    @Volatile var onRelaysLearned: ((List<String>) -> Unit)? = null
+
     val state: LinkState get() = this.link.state
 
     /** True only when a verified session exists AND the PC granted [permission] at pairing. */
@@ -92,8 +95,17 @@ class ControllerHub(
         power = PowerClient(s)
         uploader = FileUploader(s)
         downloader = FileDownloader(s, { s.hostCaps?.maxFileBytes ?: 0L }, scope).also { it.onOffer = sinkFor }
+        learnRelays(s.hostCaps?.relays.orEmpty())
         streams = rtcEngine?.let { engine -> StreamController(s, { ice.get() }, engine) }
         changed()
+    }
+
+    private fun learnRelays(advertised: List<String>) {
+        // Only websocket addresses, and never more than the PC sends; an empty list means "not said", keep ours.
+        val relays = advertised.filter { it.startsWith("ws://") || it.startsWith("wss://") }.take(4)
+        if (relays.isEmpty() || relays == host.relays) return
+        link.updateAlternateRelays(relays)
+        onRelaysLearned?.let { runCatching { it(relays) } }
     }
 
     private fun detach() {

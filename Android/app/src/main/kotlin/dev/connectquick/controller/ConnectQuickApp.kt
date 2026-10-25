@@ -77,6 +77,7 @@ class ConnectQuickApp : Application() {
     private fun buildHub(host: PairedHost) {
         val h = ControllerHub(host, identity, rtc, { offer -> DownloadsSink(this, offer.name, offer.transferId) })
         h.onRemoteClipboard = { text -> writeClipboard(text); h.clipboard?.noteApplied(text) }
+        h.onRelaysLearned = { relays -> store.save(host.copy(relays = relays)) }
         hub = h
     }
 

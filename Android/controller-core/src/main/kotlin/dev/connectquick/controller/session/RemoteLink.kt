@@ -69,11 +69,17 @@ class RemoteLink(
     private val backoffMs: (Int) -> Long = { BackendClient.backoffMs(it) },
 ) {
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val client: BackendClient = clientFactory(relay).also { it.authenticator = ControllerHello(identity) }
+    private val client: BackendClient = clientFactory(relay).also {
+        it.authenticator = ControllerHello(identity)
+        it.alternateUrls = host.relays
+    }
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private val subs = mutableListOf<Subscription>()
     private var loop: Job? = null
     private var clientJob: Job? = null
+
+    /** The PC told us (inside the encrypted session) which relays reach it; used from the next connection attempt on. */
+    fun updateAlternateRelays(relays: List<String>) { client.alternateUrls = relays }
 
     @Volatile var state: LinkState = LinkState(LinkState.Phase.STOPPED)
         private set

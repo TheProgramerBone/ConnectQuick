@@ -133,7 +133,7 @@ class PairActivity : Activity() {
             is PairingOutcome.Success -> {
                 finished = true
                 cancelPairing() // close this connection BEFORE the normal link opens its own
-                connectQuick.adoptHost(PairedHost(outcome.hostId, outcome.hostName, qr.hostPub, qr.relay, outcome.permissions, System.currentTimeMillis()))
+                connectQuick.adoptHost(PairedHost(outcome.hostId, outcome.hostName, qr.hostPub, qr.relay, outcome.permissions, System.currentTimeMillis(), qr.relays))
                 toast("Vinculado con «${outcome.hostName}»")
                 finish()
             }

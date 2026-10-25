@@ -15,6 +15,8 @@ data class PairedHost(
     val relay: String,
     val permissions: List<String>,
     val pairedAtMs: Long,
+    /** Every relay that reaches this PC, best first (its LAN relay, then the cloud one). Empty for phones paired before this existed. */
+    val relays: List<String> = emptyList(),
 )
 
 /** What the PC reports about itself in its first encrypted frame (`ctl.caps`). */
@@ -26,4 +28,6 @@ data class HostCaps(
     val screenHeight: Int?,
     val maxFileBytes: Long,
     val clipboardAutoSync: Boolean,
+    /** Relays the PC says reach it, best first (empty: it did not say). */
+    val relays: List<String> = emptyList(),
 )

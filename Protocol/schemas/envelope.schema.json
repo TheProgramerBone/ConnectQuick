@@ -41,6 +41,8 @@
         "pairing.result",
         "pairing.revoke",
         "pairing.revoked",
+        "registry.sync",
+        "registry.synced",
         "presence.update",
         "session.connect",
         "session.state",

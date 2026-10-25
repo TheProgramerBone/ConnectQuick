@@ -14,4 +14,6 @@ data class QrPairingPayload(
     val hostEphPub: String,
     val nonce: String,
     val exp: Long,
+    /** Optional: every address to try, best first. [relay] is where this pairing happens. */
+    val relays: List<String> = emptyList(),
 )

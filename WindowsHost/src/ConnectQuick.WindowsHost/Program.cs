@@ -34,6 +34,7 @@ static class Program
         var runtime = new HostRuntime(new HostRuntimeOptions
         {
             RelayUri = config.RelayUri,
+            ExtraRelays = config.ExtraRelays,
             HostName = config.HostName,
             SeedStore = new SecureKeyStore(),
             Adapters = new HostAdapters(new Win32InputInjector(), new Win32Clipboard(), new Win32MediaKeys(), new Win32PowerExecutor()),

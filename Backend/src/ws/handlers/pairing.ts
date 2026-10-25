@@ -160,3 +160,50 @@ export function handlePairingRevoke(ctx: AppContext, conn: Connection, envelope:
   ctx.log.info("device revoked", { hostId, deviceId });
   ctx.connections.getController(deviceId)?.send("pairing.revoked", { deviceId, hostId, reason: "revoked_by_host" });
 }
+
+/**
+ * The Host declares the complete set of phones it trusts, so a second relay (the PC's own LAN relay,
+ * or a replacement cloud server) can serve them without a new QR pairing. Safe because the Host is
+ * the policy point: it independently re-verifies every phone's signature and pairing on each
+ * `session.connect` (spec section 9), and a Host can only ever authorize phones for itself
+ * (`hostId` is the authenticated connection, never a payload field). The list is authoritative:
+ * phones this backend knows for the Host but that are absent from it are revoked, so a revocation
+ * made while this relay was offline still takes effect. Each entry must prove its deviceId
+ * is derived from its public key, same as at pairing.
+ */
+export function handleRegistrySync(ctx: AppContext, conn: Connection, envelope: Envelope): void {
+  requireRole(conn, "host");
+  const hostId = conn.deviceId!;
+  const { devices } = envelope.payload as {
+    devices: { deviceId: string; devicePub: string; deviceName: string; permissions: string[] }[];
+  };
+  const keep = new Set<string>();
+  let authorized = 0;
+  for (const d of devices) {
+    deriveAndCheck(d.devicePub, d.deviceId);
+    keep.add(d.deviceId);
+    const existing = ctx.devices.find(d.deviceId, hostId);
+    const same =
+      existing &&
+      !existing.revoked &&
+      existing.devicePub === d.devicePub &&
+      existing.deviceName === d.deviceName &&
+      existing.permissions.join(",") === d.permissions.join(",");
+    if (!same) ctx.devices.authorize(d.deviceId, hostId, d.devicePub, d.deviceName, d.permissions);
+    authorized++;
+  }
+  let revoked = 0;
+  for (const rec of ctx.devices.listByHost(hostId)) {
+    if (rec.revoked || keep.has(rec.deviceId)) continue;
+    ctx.devices.revoke(rec.deviceId, hostId);
+    for (const session of ctx.activeSessions.forDevice(rec.deviceId, hostId)) endSession(ctx, session, "revoked");
+    ctx.connections.getController(rec.deviceId)?.send("pairing.revoked", {
+      deviceId: rec.deviceId,
+      hostId,
+      reason: "revoked_by_host",
+    });
+    revoked++;
+  }
+  ctx.log.info("registry synced", { hostId, authorized, revoked });
+  conn.send("registry.synced", { authorized, revoked });
+}

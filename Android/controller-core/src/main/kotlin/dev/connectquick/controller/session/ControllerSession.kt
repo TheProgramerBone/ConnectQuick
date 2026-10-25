@@ -162,6 +162,7 @@ class ControllerSession private constructor(
             screenHeight = screen?.get("height")?.jsonPrimitive?.intOrNull,
             maxFileBytes = m["maxFileBytes"]?.jsonPrimitive?.longOrNull ?: 0L,
             clipboardAutoSync = m["clipboardSync"]?.jsonPrimitive?.booleanOrNull ?: false,
+            relays = (m["relays"] as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList(),
         )
     }
 

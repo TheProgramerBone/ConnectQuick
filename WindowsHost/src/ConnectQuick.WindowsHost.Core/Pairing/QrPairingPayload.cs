@@ -9,6 +9,9 @@ public sealed class QrPairingPayload
     public int V { get; init; } = 1;
     public required string PairingId { get; init; }
     public required string Relay { get; init; }
+    /// <summary>Every address the phone may try, best first (e.g. the PC's LAN relay, then the cloud one). Omitted when there is only <see cref="Relay"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Relays { get; init; }
     public required string HostId { get; init; }
     public required string HostName { get; init; }
     public required string HostPub { get; init; }

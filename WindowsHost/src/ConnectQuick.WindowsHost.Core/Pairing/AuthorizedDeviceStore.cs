@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace ConnectQuick.WindowsHost.Pairing;
 
-public sealed record AuthorizedDevice(string DeviceId, string DeviceName, IReadOnlyList<string> Permissions, long AuthorizedAtMs);
+public sealed record AuthorizedDevice(string DeviceId, string DeviceName, IReadOnlyList<string> Permissions, long AuthorizedAtMs, string? DevicePub = null);
 
 /// <summary>
 /// Local record of devices this Host has approved, so the tray "Dispositivos vinculados" menu has
