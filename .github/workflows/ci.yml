@@ -39,17 +39,21 @@ jobs:
         run: dotnet build WindowsHost/ConnectQuick.WindowsHost.sln -c Release --nologo
 
       - name: Windows host tests
+        if: ${{ !cancelled() }}
         run: dotnet test WindowsHost/src/ConnectQuick.WindowsHost.Tests -c Release --no-build --nologo
 
       - name: Android controller-core tests (JVM)
+        if: ${{ !cancelled() }}
         working-directory: Android
         run: .\gradlew.bat -p controller-core test --console=plain
 
       - name: Android debug APK
+        if: ${{ !cancelled() }}
         working-directory: Android
         run: .\gradlew.bat assembleDebug --console=plain
 
       - name: Cross-platform scenarios
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           dotnet build WindowsHost/src/ConnectQuick.WindowsHost.HostHarness -c Release --nologo
@@ -60,6 +64,7 @@ jobs:
           CQ_CONTROLLER_CP="$CP" npm test
 
       - name: Publish the Windows host
+        if: ${{ !cancelled() }}
         run: dotnet publish WindowsHost/src/ConnectQuick.WindowsHost/ConnectQuick.WindowsHost.csproj -c Release -r win-x64 --self-contained -o artifacts/windows --nologo
 
       - uses: actions/upload-artifact@v4
