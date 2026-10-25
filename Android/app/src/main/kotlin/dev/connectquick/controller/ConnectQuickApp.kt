@@ -61,23 +61,34 @@ class ConnectQuickApp : Application() {
 
     /** Called after a successful pairing, or when switching PC. */
     fun adoptHost(host: PairedHost) {
-        hub?.release()
-        store.save(host)
-        buildHub(host)
-        hub?.start()
+        store.saveBook(store.book().adopt(host))
+        rebuildHub()
     }
 
-    /** Forgets the PC on this phone. (The PC keeps its own list; revoke this phone there as well if it should lose access.) */
+    /** Makes another already-paired PC the one in use. */
+    fun switchHost(hostId: String) {
+        store.saveBook(store.book().use(hostId))
+        rebuildHub()
+    }
+
+    /** Forgets the PC in use on this phone (another paired one, if any, takes over). The PC keeps its own list; revoke this phone there as well if it should lose access. */
     fun forgetHost() {
+        val book = store.book()
+        val id = book.active?.hostId ?: return
+        store.saveBook(book.forget(id))
+        rebuildHub()
+    }
+
+    private fun rebuildHub() {
         hub?.release()
         hub = null
-        store.clear()
+        store.load()?.let { buildHub(it); hub?.start() }
     }
 
     private fun buildHub(host: PairedHost) {
         val h = ControllerHub(host, identity, rtc, { offer -> DownloadsSink(this, offer.name, offer.transferId) })
         h.onRemoteClipboard = { text -> writeClipboard(text); h.clipboard?.noteApplied(text) }
-        h.onRelaysLearned = { relays -> store.save(host.copy(relays = relays)) }
+        h.onRelaysLearned = { relays -> store.saveBook(store.book().refresh(host.copy(relays = relays))) }
         hub = h
     }
 

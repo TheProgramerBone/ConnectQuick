@@ -2,6 +2,7 @@ package dev.connectquick.controller.data
 
 import android.content.Context
 import dev.connectquick.controller.input.TouchpadConfig
+import dev.connectquick.controller.session.HostBook
 import dev.connectquick.controller.session.PairedHost
 import kotlinx.serialization.json.Json
 
@@ -14,16 +15,15 @@ class HostStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("connectquick", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun load(): PairedHost? =
-        prefs.getString(KEY_HOST, null)?.let { runCatching { json.decodeFromString(PairedHost.serializer(), it) }.getOrNull() }
+    /** All the PCs this phone is paired with (reads the older single-PC format too). */
+    fun book(): HostBook = HostBook.parse(prefs.getString(KEY_HOST, null))
 
-    fun save(host: PairedHost) {
-        prefs.edit().putString(KEY_HOST, json.encodeToString(PairedHost.serializer(), host)).apply()
+    fun saveBook(book: HostBook) {
+        prefs.edit().apply { if (book.hosts.isEmpty()) remove(KEY_HOST) else putString(KEY_HOST, book.encode()) }.apply()
     }
 
-    fun clear() {
-        prefs.edit().remove(KEY_HOST).apply()
-    }
+    /** The PC in use, or null when none is paired. */
+    fun load(): PairedHost? = book().active
 
     fun touchpad(): TouchpadConfig = TouchpadConfig(
         sensitivity = prefs.getFloat(KEY_SENS, 1.6f).coerceIn(0.5f, 4f),

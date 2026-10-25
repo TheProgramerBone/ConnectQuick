@@ -99,6 +99,16 @@ class MainActivity : HubActivity() {
             ),
             Ui.lp(this, top = 6, bottom = 8),
         )
+        val others = connectQuick.store.book().others
+        if (others.isNotEmpty()) {
+            val rows = others.map { other ->
+                Ui.button(this, "Usar «${other.hostName}»") { connectQuick.switchHost(other.hostId); recreate() }
+            }
+            content.addView(
+                Ui.card(this, Ui.heading(this, "Tus otros PC"), Ui.dim(this, "Cambia de PC sin volver a vincular."), Ui.spacer(this, 8), *rows.toTypedArray()),
+                Ui.lp(this, top = 6, bottom = 8),
+            )
+        }
         content.addView(appearanceCard(), Ui.lp(this, top = 6, bottom = 8))
         content.gravity = Gravity.TOP
     }

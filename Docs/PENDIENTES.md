@@ -79,7 +79,7 @@ Análisis completo hecho el 24-oct-2026 leyendo todo el código de conexión. Or
 ## B. Funcionalidad nueva
 
 ### B1. Un celular con varios PC
-- **Estado (25-oct):** la parte del backend ya está hecha y probada (clave `(device_id, host_id)` con migración, `test/unit/migration.test.ts`). Falta solo Android (lista de PC + selector), que no se puede compilar en la nube.
+- **Estado (25-oct):** ✅ backend (clave `(device_id, host_id)` con migración, `test/unit/migration.test.ts`) y ✅ Android escrito: `HostBook` (lista de PC + cuál se usa; lee el formato de un solo PC), vincular otro PC lo añade y lo activa, tarjeta «Tus otros PC» en la pantalla principal para cambiar, «Olvidar este PC» activa otro si queda. Sin probar en el móvil; tests JVM en `HostBookTest`.
 - **Problema:** `authorized_devices` usa `device_id` como clave única en el backend; la app Android guarda un solo PC.
 - **Plan:** clave `(device_id, host_id)` con migración; pruebas de vincular/revocar por par; lista de PC en Android con
   selector; documentarlo en el protocolo.
