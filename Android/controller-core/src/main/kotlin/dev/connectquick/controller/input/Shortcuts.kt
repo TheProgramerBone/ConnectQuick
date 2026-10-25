@@ -31,6 +31,15 @@ object Shortcuts {
         Shortcut("Pantalla completa", "F11", listOf("F11")),
     )
 
+    /** Slide shows (PowerPoint, Google Slides, PDF viewers): the same keys everyone uses from the keyboard. */
+    val presentationStart = Shortcut("Iniciar", "Empezar la presentación, F5", listOf("F5"))
+    val presentationStartHere = Shortcut("Desde aquí", "Empezar desde la diapositiva actual, Mayús+F5", listOf("ShiftLeft", "F5"))
+    val presentationNext = Shortcut("Siguiente", "Siguiente diapositiva", listOf("ArrowRight"))
+    val presentationPrevious = Shortcut("Anterior", "Diapositiva anterior", listOf("ArrowLeft"))
+    val presentationBlack = Shortcut("Pantalla negra", "Oscurecer la pantalla, B", listOf("KeyB"))
+    val presentationWhite = Shortcut("Pantalla blanca", "Aclarar la pantalla, W", listOf("KeyW"))
+    val presentationEnd = Shortcut("Salir", "Terminar la presentación, Esc", listOf("Escape"))
+
     /** Windows touchpad conventions: up = Task View, down = desktop, sideways = switch app. */
     fun forGesture(g: TouchGesture): Shortcut = when (g) {
         TouchGesture.SWIPE_UP -> Shortcut("Vista de tareas", "Win+Tab", listOf("MetaLeft", "Tab"))

@@ -96,6 +96,7 @@ Análisis completo hecho el 24-oct-2026 leyendo todo el código de conexión. Or
 - Cada celular con su puesto de jugador y permisos limitados ("solo mando"). Depende de B3.
 
 ### B5. Utilidades
+- **Hecho 25-oct (sin probar en el móvil):** pantalla «Presentación» (anterior/siguiente, F5, Mayús+F5, pantalla negra/blanca, Esc) con teclas normales bajo el permiso de teclado. Pendiente: atajos OBS/Discord (dependen de las teclas que cada usuario configure en esos programas).
 - Control de presentaciones, atajos para OBS/Discord (como atajos fijos tipados, nunca comandos genéricos).
 
 ---

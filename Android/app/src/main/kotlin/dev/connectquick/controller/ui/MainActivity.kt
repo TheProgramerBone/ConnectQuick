@@ -59,6 +59,7 @@ class MainActivity : HubActivity() {
             Entry(FeatureTile(this, GlyphView.Glyph.CLIPBOARD, "Portapapeles"), "clipboard", "Copiar y pegar", ClipboardActivity::class.java),
             Entry(FeatureTile(this, GlyphView.Glyph.MEDIA, "Multimedia"), "media", "Volumen y reproducción", MediaActivity::class.java),
             Entry(FeatureTile(this, GlyphView.Glyph.FOLDER, "Archivos"), "files", "Enviar y recibir", FilesActivity::class.java),
+            Entry(FeatureTile(this, GlyphView.Glyph.SCREEN, "Presentación"), "keyboard", "Pasar diapositivas", PresentationActivity::class.java),
             Entry(FeatureTile(this, GlyphView.Glyph.POWER, "Energía"), "power", "Bloquear o apagar", PowerActivity::class.java),
         )
         entries += items
@@ -68,7 +69,7 @@ class MainActivity : HubActivity() {
                 val keyboardTile = e.tile
                 keyboardTile.setOnClickListener {
                     val intent = Intent(this, e.target)
-                    if (e.permission == "keyboard") intent.putExtra(TouchpadActivity.EXTRA_OPEN_KEYBOARD, true)
+                    if (e.permission == "keyboard" && e.target == TouchpadActivity::class.java) intent.putExtra(TouchpadActivity.EXTRA_OPEN_KEYBOARD, true)
                     startActivity(intent)
                 }
                 row.addView(keyboardTile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {

@@ -35,6 +35,7 @@
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout" />
         <activity android:name=".ui.ClipboardActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ui.MediaActivity" android:exported="false" />
+        <activity android:name=".ui.PresentationActivity" android:exported="false" />
         <activity android:name=".ui.FilesActivity" android:exported="false" />
         <activity android:name=".ui.PowerActivity" android:exported="false" />
 

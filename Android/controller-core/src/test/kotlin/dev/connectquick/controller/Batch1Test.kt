@@ -61,7 +61,8 @@ class ShortcutsAndProfilesTest {
 
     @Test
     fun every_shortcut_key_is_a_valid_wire_code_and_no_reserved_combo_is_offered() {
-        val all = Shortcuts.editing + Shortcuts.windows
+        val presentation = with(Shortcuts) { listOf(presentationStart, presentationStartHere, presentationNext, presentationPrevious, presentationBlack, presentationWhite, presentationEnd) }
+        val all = Shortcuts.editing + Shortcuts.windows + presentation
         all.flatMap { it.keys }.plus(Shortcuts.functionKeys).plus(Shortcuts.keyBar.map { it.second })
             .forEach { assertTrue("bad code $it", codePattern.matches(it)) }
         assertFalse(all.any { it.keys.containsAll(listOf("ControlLeft", "AltLeft", "Delete")) })
