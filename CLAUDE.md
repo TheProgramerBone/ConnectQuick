@@ -43,9 +43,17 @@ Docs/         STATUS, ARCHITECTURE, SECURITY, GUIA_DE_PRUEBAS, COMPILAR_Y_CONFIR
   Server updates: `sudo bash /opt/connectquick/Deploy/gcp/update.sh` on the VM after pushing to `main`.
 - **Scaling decision** (measured, `Backend/scripts/loadtest.ts`): single instance; ~18k relayed frames/s at 500 sessions = 0.56 core/143 MB. No Redis/multi-instance. Design for later (route by hostId, Postgres) is in `Docs/ARCHITECTURE.md`.
 
+## Session of 25 Oct 2026 (read this before anything else)
+
+Done and pushed to `main`: A1 (fast dead-link detection + network-change reconnect on the PC), A3 (video self-heals), A2 (multi-relay: cloud + PC's own LAN relay, `registry.sync`, QR/`ctl.caps` `relays`),
+B1 (several PCs per phone, `HostBook`), B5 (presentation screen), C1 (Windows CI). Details and verification status per item: `Docs/STATUS.md` ("Changes of 25 Oct 2026") and `Docs/PENDIENTES.md`.
+**The CI is now the compile/test oracle for C# and Kotlin** (the sandbox still has neither `dotnet` nor Gradle plugin access). Use `mcp__github__actions_list` / `get_job_logs` to read runs; check them before building on top.
+Backend is now 106 tests. Not done and why: A4 (touches the live GCP server, CI cannot check it), A5/A6/A7 (protocol changes on 3 platforms — do one at a time once CI is green; A7 session resume is the most valuable),
+B2/B3/B4 (need real hardware), C2–C5 (need a device / owner decisions; old `claude/*` branches must be deleted by the owner on GitHub).
+
 ## State at hand-off (be honest about it)
 
-Automated and green: Backend 104 tests · .NET 156 · Kotlin controller-core 110 (JVM) · cross-platform `Tests/` 40 scenarios · `tsc` clean · `npm audit` 0.
+Automated and green (as of the first session; see the 25 Oct section for the current counts): Backend 104 tests · .NET 156 · Kotlin controller-core 110 (JVM) · cross-platform `Tests/` 40 scenarios · `tsc` clean · `npm audit` 0.
 **Never run on real hardware**: Win32 adapters (SendInput, clipboard, media keys, power, GDI capture, DPAPI), the WinForms UI (only compile-checked against reference assemblies), the whole Android app
 (compile-checked against android-all + libwebrtc API, except `ScanActivity`, which needs CameraX/ML Kit AARs), real VP8 encode/libwebrtc decode, TURN, real NAT traversal.
 `./gradlew assembleDebug` and `./gradlew test` were **never run** in the sandbox (Gradle plugin resolution was blocked). Expect first-build errors on the owner's PC. The owner started running

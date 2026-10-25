@@ -4,7 +4,7 @@ Honest, phase-by-phase state of the project against the plan in the original bri
 a phase's status changes — this is the file to read to know what is real versus planned, and **what
 has and has not actually been run**.
 
-Last full update: 16-oct-2026.
+Last full update: 16-oct-2026. Addendum 25-oct-2026 at the end ("Changes of 25 Oct 2026").
 
 ## How to read the marks
 
@@ -214,3 +214,22 @@ Docs/        this file, ARCHITECTURE, SECURITY, GUIA_DE_PRUEBAS
 3. Stand up coturn (`Docs/ARCHITECTURE.md`) and test streaming across two different networks.
 4. An accessibility pass with TalkBack and Narrator, and screenshots for the design system.
 5. External security review before any public release.
+
+## Changes of 25 Oct 2026 (written; verification noted per item)
+
+The cloud sandbox has no `dotnet` and cannot resolve the Gradle plugin, so only the Backend was run locally. **CI** (`.github/workflows/ci.yml`, windows-latest:
+backend, whole .NET solution incl. WinForms, .NET tests, Kotlin tests, debug APK, cross-platform scenarios, host publish) is the check for everything else.
+First CI run: solution compiled with 0 errors, Backend green, 161/162 .NET tests (the failing one, `A_flood_of_pointer_events_is_rate_limited`, passed on the next run: timing-sensitive).
+Second run: .NET, Kotlin and APK steps green (includes A1/A3). Runs for A2, B1 and B5 were still in progress when this was written — read them before trusting those items.
+
+| Item | What | Verified |
+|---|---|---|
+| A1 | Host reconnects on `NetworkChange`; 5 s ping / 12 s dead-after while a session is live (`BackendClient.SessionActive`) | compiles (CI run 2); behaviour not run |
+| A3 | `StreamController` re-requests the stream (max 3) after media that had connected drops (DISCONNECTED > 5 s or FAILED) | Kotlin test in CI run 2 green |
+| A2 | Several relays: backend `registry.sync`/`registry.synced` (Host declares trusted phones; authoritative); Host connects to extra relays (`relay.txt` lines 2+, `{lan}`), QR `relays` + `ctl.caps.relays`; phone races all relays per connection (`BackendClient.pickUrl`) and learns the list in-session; `Scripts/usar-servidor.ps1 -ConServidorLocal`; scenario `Tests/integration/relays.test.ts` | backend 106 tests ✅ (2 new); rest pending CI |
+| B1 | `HostBook` (several PCs, one active, legacy single-PC format migrated), switcher card on home, pairing adds instead of replacing | `HostBookTest` pending CI; UI never shown |
+| B5 | `PresentationActivity` (slides, F5, black/white, Esc) over the keyboard permission | pending CI; UI never shown |
+| C1 | CI workflow | ran; see above |
+
+Known limits of A2: release APK is TLS-only so the LAN `ws://` route works only in the debug APK; a reachable-but-empty local relay is retried in a loop;
+video ICE config still comes from the main relay. The host stores phone public keys (`AuthorizedDevice.DevicePub`), backfilled on a phone's first session after the update.

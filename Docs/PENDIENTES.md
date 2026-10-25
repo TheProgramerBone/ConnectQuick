@@ -1,6 +1,6 @@
 # ConnectQuick — Pendientes y plan para la próxima sesión
 
-Última actualización: 24-oct-2026. Rama de trabajo: **`main`** (se trabaja siempre directo en `main`).
+Última actualización: 25-oct-2026. Rama de trabajo: **`main`** (se trabaja siempre directo en `main`).
 Contexto: `Docs/STATUS.md` (estado técnico detallado), `CLAUDE.md` (memoria del proyecto),
 `Docs/SERVIDOR_GRATIS_GOOGLE_CLOUD.md` (servidor en la nube).
 
@@ -128,8 +128,13 @@ Análisis completo hecho el 24-oct-2026 leyendo todo el código de conexión. Or
 
 ## D. Orden sugerido para la próxima sesión
 
-1. Bloque 0 (gasto, confirmar mejoras del móvil).
-2. A1 + A3 (reconexión rápida y vídeo que se recupera): pequeños y se notan mucho.
-3. C1 (CI en Windows) para poder compilar el C# sin depender de tu PC.
-4. A2 (lista de relays) tras decidir el diseño de la ruta LAN.
-5. B1 (varios PC) si se necesita; luego A4–A7 según cómo vaya el uso real.
+1. **Mirar el CI** (GitHub → Actions, workflow «CI») de los commits de A1, A2, A3, B1 y B5 (25-oct). Es la primera vez que se compila/ejecuta
+   todo eso: pasar los errores a Claude. Ya se sabe que el 1.er run compiló toda la solución de Windows (incl. WinForms) y que el test
+   `A_flood_of_pointer_events_is_rate_limited` es intermitente en el runner de Windows (pasó en el 2.º run).
+2. Bloque 0 (gasto, confirmar mejoras del móvil).
+3. Probar en real: A1/A3 (cambiar de Wi-Fi a datos con una sesión abierta), A2 (`Scripts\usar-servidor.ps1 -Relay … -ConServidorLocal`),
+   B1 (vincular un 2.º PC y cambiar), B5 (pantalla Presentación).
+4. Luego, de uno en uno: **A7** (reanudar sesión; lo que más se nota), A4, A5, A6, y B2/B3/B4, C2–C5.
+
+### Hecho el 25-oct-2026 (resumen)
+A1, A2, A3, B1 (completo), B5 (solo Presentación), C1 — todo escrito y subido a `main`; backend probado en local (106 tests), el resto lo valida el CI.
