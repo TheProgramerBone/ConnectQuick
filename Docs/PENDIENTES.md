@@ -76,6 +76,7 @@ Análisis completo hecho el 24-oct-2026 leyendo todo el código de conexión. Or
 ## B. Funcionalidad nueva
 
 ### B1. Un celular con varios PC
+- **Estado (25-oct):** la parte del backend ya está hecha y probada (clave `(device_id, host_id)` con migración, `test/unit/migration.test.ts`). Falta solo Android (lista de PC + selector), que no se puede compilar en la nube.
 - **Problema:** `authorized_devices` usa `device_id` como clave única en el backend; la app Android guarda un solo PC.
 - **Plan:** clave `(device_id, host_id)` con migración; pruebas de vincular/revocar por par; lista de PC en Android con
   selector; documentarlo en el protocolo.
